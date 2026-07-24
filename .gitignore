@@ -5,6 +5,8 @@ bin/
 *.dll
 *.so
 *.dylib
+# Root-level build output (e.g. `go build ./cmd/migrate/`); source under cmd/ is still tracked
+/migrate
 
 # Test
 *.test
