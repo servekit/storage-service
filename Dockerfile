@@ -10,13 +10,14 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/migrate ./cmd/migrate
 
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /bin/server /bin/server
-COPY migrations /migrations
+COPY --from=builder /bin/migrate /bin/migrate
 
 EXPOSE 9000 8080
 
