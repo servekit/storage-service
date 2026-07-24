@@ -1,0 +1,48 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Go
+go.work
+go.work.sum
+
+# Config (contains secrets)
+config.yaml
+*.local.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Buf
+.buf/
+
+# Temp files
+*.tmp
+go.mod.tmp
+
+# Build cache
+.cache/
+
+# Worktrees
+.worktrees/
+
+# Claude Code
+.claude/

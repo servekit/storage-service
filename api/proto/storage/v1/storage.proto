@@ -1,0 +1,919 @@
+syntax = "proto3";
+
+package storage.v1;
+
+option go_package = "storage-service/gen/storage/v1;storagev1";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+
+// OwnerType classifies who owns a file (user, system, group, etc.).
+enum OwnerType {
+  OWNER_TYPE_UNSPECIFIED = 0;
+  OWNER_TYPE_USER = 1;
+  OWNER_TYPE_SYSTEM = 2;
+  OWNER_TYPE_GROUP = 3;
+  OWNER_TYPE_BUSINESS = 4;
+  OWNER_TYPE_SERVICE = 5;
+}
+
+// Vendor classifies storage backends (cloud storage providers).
+enum Vendor {
+  VENDOR_UNSPECIFIED = 0;
+  VENDOR_ALIYUN_OSS = 1;
+  VENDOR_AWS_S3 = 2;
+  VENDOR_S3_COMPATIBLE = 3;
+  VENDOR_TENCENT_COS = 4;
+  VENDOR_HUAWEI_OBS = 5;
+  VENDOR_VOLCENGINE_TOS = 6;
+}
+
+// StorageClass represents cloud storage tiers.
+enum StorageClass {
+  STORAGE_CLASS_UNSPECIFIED = 0;
+  STORAGE_CLASS_STANDARD = 1;
+  STORAGE_CLASS_INFREQUENT_ACCESS = 2;
+  STORAGE_CLASS_ARCHIVE = 3;
+  STORAGE_CLASS_DEEP_ARCHIVE = 4;
+}
+
+// BucketACL represents bucket access control levels.
+enum BucketACL {
+  BUCKET_ACL_UNSPECIFIED = 0;
+  BUCKET_ACL_PRIVATE = 1;
+  BUCKET_ACL_PUBLIC_READ = 2;
+  BUCKET_ACL_PUBLIC_READ_WRITE = 3;
+}
+
+// ImageResizeMode controls how images are resized.
+enum ImageResizeMode {
+  IMAGE_RESIZE_MODE_UNSPECIFIED = 0;
+  IMAGE_RESIZE_MODE_FIT = 1;    // lfit — fit within bounds
+  IMAGE_RESIZE_MODE_FILL = 2;   // fill — crop to fill
+  IMAGE_RESIZE_MODE_PAD = 3;    // pad — fit with padding
+}
+
+// ImageFormat represents output image formats.
+enum ImageFormat {
+  IMAGE_FORMAT_UNSPECIFIED = 0;
+  IMAGE_FORMAT_JPG = 1;
+  IMAGE_FORMAT_PNG = 2;
+  IMAGE_FORMAT_WEBP = 3;
+  IMAGE_FORMAT_GIF = 4;
+  IMAGE_FORMAT_BMP = 5;
+  IMAGE_FORMAT_HEIC = 6;
+  IMAGE_FORMAT_AVIF = 7;
+}
+
+// SortField controls list ordering.
+enum SortField {
+  SORT_FIELD_UNSPECIFIED = 0;
+  SORT_FIELD_CREATED_AT = 1;
+  SORT_FIELD_FILENAME = 2;
+  SORT_FIELD_SIZE = 3;
+}
+
+// AuditAction represents types of auditable operations.
+enum AuditAction {
+  AUDIT_ACTION_UNSPECIFIED = 0;
+  AUDIT_ACTION_UPLOAD = 1;
+  AUDIT_ACTION_UPDATE = 2;
+  AUDIT_ACTION_DELETE = 3;
+  AUDIT_ACTION_BATCH_DELETE = 4;
+  AUDIT_ACTION_ADMIN_DELETE = 5;
+  AUDIT_ACTION_ADMIN_SET_QUOTA = 6;
+  AUDIT_ACTION_ADMIN_SOFT_DELETE_OWNER = 7;
+  AUDIT_ACTION_ADMIN_DELETE_OWNER = 8;
+  AUDIT_ACTION_SET_OWNER_QUOTA = 9;
+  AUDIT_ACTION_ADD_OWNER_QUOTA = 10;
+  AUDIT_ACTION_UPLOAD_SESSION_CREATE  = 11;
+  AUDIT_ACTION_UPLOAD_SESSION_CONFIRM = 12;
+  AUDIT_ACTION_UPLOAD_SESSION_CANCEL  = 13;
+  AUDIT_ACTION_UPLOAD_SESSION_GC      = 14;
+}
+
+// UploadSessionStatus represents the lifecycle state of an upload session.
+enum UploadSessionStatus {
+  UPLOAD_SESSION_STATUS_UNSPECIFIED = 0;
+  UPLOAD_SESSION_STATUS_PENDING     = 1;
+  UPLOAD_SESSION_STATUS_CONFIRMED   = 2;
+  UPLOAD_SESSION_STATUS_EXPIRED     = 3;
+  UPLOAD_SESSION_STATUS_CANCELLED   = 4;
+}
+
+// AuditLogStatus represents the result of an audited operation.
+enum AuditLogStatus {
+  AUDIT_LOG_STATUS_UNSPECIFIED = 0;
+  AUDIT_LOG_STATUS_SUCCESS = 1;
+  AUDIT_LOG_STATUS_FAILED = 2;
+}
+
+// AuditLogTargetType represents the kind of resource an audited operation touched.
+enum AuditLogTargetType {
+  AUDIT_LOG_TARGET_TYPE_UNSPECIFIED = 0;
+  AUDIT_LOG_TARGET_TYPE_FILE = 1;
+  AUDIT_LOG_TARGET_TYPE_QUOTA = 2;
+  AUDIT_LOG_TARGET_TYPE_OWNER = 3;
+}
+
+// StorageService provides file storage, upload, download, and management capabilities.
+service StorageService {
+  // Upload
+
+  // GenerateUploadURL returns a pre-signed upload URL or instant upload result.
+  rpc GenerateUploadURL(GenerateUploadURLRequest) returns (GenerateUploadURLResponse) {
+    option (google.api.http) = {
+      post: "/v1/uploads"
+      body: "*"
+    };
+  }
+  // GetSTSCredential returns STS temporary credentials for client-side upload.
+  rpc GetSTSCredential(GetSTSCredentialRequest) returns (GetSTSCredentialResponse) {
+    option (google.api.http) = {
+      post: "/v1/sts"
+      body: "*"
+    };
+  }
+  // BatchGetSTSCredential returns shared STS credentials plus per-file upload
+  // tokens / instant results for a batch of files. The shared STS credential
+  // is fetched once and reused across all files in the batch.
+  rpc BatchGetSTSCredential(BatchGetSTSCredentialRequest) returns (BatchGetSTSCredentialResponse) {
+    option (google.api.http) = {
+      post: "/v1/sts:batch"
+      body: "*"
+    };
+  }
+  // ConfirmUpload confirms a file upload and creates the file record.
+  rpc ConfirmUpload(ConfirmUploadRequest) returns (ConfirmUploadResponse) {
+    option (google.api.http) = {
+      post: "/v1/uploads:confirm"
+      body: "*"
+    };
+  }
+  // CancelUpload cancels a pending upload session. Best-effort: only succeeds
+  // when the session is still PENDING. The OSS object is NOT deleted (the
+  // client may still be uploading); GC reclaims orphaned objects later.
+  rpc CancelUpload(CancelUploadRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/uploads:cancel"
+      body: "*"
+    };
+  }
+
+  // Download
+
+  // GenerateDownloadURL returns a pre-signed download URL.
+  rpc GenerateDownloadURL(GenerateDownloadURLRequest) returns (GenerateDownloadURLResponse) {
+    option (google.api.http) = {
+      post: "/v1/files/{file_id}:generateDownloadUrl"
+      body: "*"
+    };
+  }
+
+  // User File Management
+
+  // ListMyFiles lists files owned by the calling user.
+  rpc ListMyFiles(ListMyFilesRequest) returns (ListMyFilesResponse) {
+    option (google.api.http) = { get: "/v1/files" };
+  }
+  // ListMyFilesPaged lists files owned by the calling user with traditional
+  // offset pagination. Use this when the caller needs total_count and page
+  // numbers (UI list views with page navigation). For stable iteration under
+  // concurrent writes (background scans, exports), use ListMyFiles instead.
+  rpc ListMyFilesPaged(ListMyFilesPagedRequest) returns (ListMyFilesPagedResponse) {
+    option (google.api.http) = { get: "/v1/files:page" };
+  }
+  // GetMyFile returns details of a file owned by the calling user.
+  rpc GetMyFile(GetMyFileRequest) returns (UserFileInfo) {
+    option (google.api.http) = { get: "/v1/files/{file_id}" };
+  }
+  // UpdateMyFile updates metadata of a user's file.
+  rpc UpdateMyFile(UpdateMyFileRequest) returns (UserFileInfo) {
+    option (google.api.http) = {
+      patch: "/v1/files/{file_id}"
+      body: "*"
+    };
+  }
+  // DeleteMyFile soft-deletes a user's file.
+  rpc DeleteMyFile(DeleteMyFileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/files/{file_id}" };
+  }
+  // BatchDeleteMyFiles soft-deletes multiple user files.
+  rpc BatchDeleteMyFiles(BatchDeleteMyFilesRequest) returns (BatchDeleteMyFilesResponse) {
+    option (google.api.http) = {
+      post: "/v1/files:batchDelete"
+      body: "*"
+    };
+  }
+
+  // Image Processing
+
+  // GenerateProcessURL returns a URL with image processing parameters.
+  rpc GenerateProcessURL(GenerateProcessURLRequest) returns (GenerateProcessURLResponse) {
+    option (google.api.http) = {
+      post: "/v1/files/{file_id}:generateProcessUrl"
+      body: "*"
+    };
+  }
+
+  // GenerateCDNURL returns a CDN-fronted signed URL (with expiry) for an
+  // already-uploaded file. Caller must own the file. If ops is non-empty,
+  // the URL carries image-processing parameters (Aliyun x-oss-process);
+  // S3/CloudFront providers reject ops with CDN_IMAGE_PROCESSING_UNSUPPORTED.
+  rpc GenerateCDNURL(GenerateCDNURLRequest) returns (GenerateCDNURLResponse) {
+    option (google.api.http) = {
+      post: "/v1/files/{file_id}:generateCdnUrl"
+      body: "*"
+    };
+  }
+
+  // Quota
+
+  // GetMyQuota returns the calling user's storage quota.
+  rpc GetMyQuota(GetMyQuotaRequest) returns (QuotaInfo) {
+    option (google.api.http) = { get: "/v1/quota" };
+  }
+
+  // Admin
+
+  // AdminListFiles lists all files (admin only).
+  rpc AdminListFiles(AdminListFilesRequest) returns (AdminListFilesResponse) {
+    option (google.api.http) = { get: "/v1/admin/files" };
+  }
+  // AdminGetFile returns file details (admin only).
+  rpc AdminGetFile(AdminGetFileRequest) returns (AdminFileInfo) {
+    option (google.api.http) = { get: "/v1/admin/files/{file_id}" };
+  }
+  // AdminDeleteFile deletes a file (admin only).
+  rpc AdminDeleteFile(AdminDeleteFileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/admin/files/{file_id}" };
+  }
+  // AdminGetQuota returns a user's quota (admin only).
+  rpc AdminGetQuota(AdminGetQuotaRequest) returns (QuotaInfo) {
+    option (google.api.http) = { get: "/v1/admin/owners/{owner_type}/{owner_id}/quota" };
+  }
+  // AdminSetQuota sets a user's quota (admin only).
+  rpc AdminSetQuota(AdminSetQuotaRequest) returns (QuotaInfo) {
+    option (google.api.http) = {
+      put: "/v1/admin/owners/{owner_type}/{owner_id}/quota"
+      body: "*"
+    };
+  }
+  // AdminGetStats returns storage statistics (admin only).
+  rpc AdminGetStats(AdminGetStatsRequest) returns (AdminGetStatsResponse) {
+    option (google.api.http) = { get: "/v1/admin/stats" };
+  }
+  // AdminListProviders lists all storage providers (admin only).
+  rpc AdminListProviders(google.protobuf.Empty) returns (AdminListProvidersResponse) {
+    option (google.api.http) = { get: "/v1/admin/providers" };
+  }
+  // AdminListBuckets lists all buckets (admin only).
+  rpc AdminListBuckets(google.protobuf.Empty) returns (AdminListBucketsResponse) {
+    option (google.api.http) = { get: "/v1/admin/buckets" };
+  }
+  // AdminSoftDeleteOwnerFiles soft-deletes all files for an owner (admin only).
+  rpc AdminSoftDeleteOwnerFiles(AdminSoftDeleteOwnerFilesRequest) returns (AdminSoftDeleteOwnerFilesResponse) {
+    option (google.api.http) = {
+      post: "/v1/admin/owners/{owner_type}/{owner_id}:softDeleteFiles"
+      body: "*"
+    };
+  }
+  // AdminDeleteOwner soft-deletes all files and quota for an owner (admin only).
+  rpc AdminDeleteOwner(AdminDeleteOwnerRequest) returns (AdminDeleteOwnerResponse) {
+    option (google.api.http) = { delete: "/v1/admin/owners/{owner_type}/{owner_id}" };
+  }
+
+  // Audit Log
+
+  // ListMyAuditLogs lists audit logs for the calling user.
+  rpc ListMyAuditLogs(ListMyAuditLogsRequest) returns (ListMyAuditLogsResponse) {
+    option (google.api.http) = { get: "/v1/audit-logs" };
+  }
+  // AdminListAuditLogs lists all audit logs (admin only).
+  rpc AdminListAuditLogs(AdminListAuditLogsRequest) returns (AdminListAuditLogsResponse) {
+    option (google.api.http) = { get: "/v1/admin/audit-logs" };
+  }
+
+  // Business-facing quota management.
+  // TODO(auth): these RPCs have no authentication today. Before exposing in
+  // production, add service-to-service authentication (shared secret / mTLS /
+  // OAuth client credentials). See go-common/grpcx/auth.go for helpers.
+
+  // SetOwnerQuota overwrites an owner's total quota. Business-facing (e.g.
+  // pay-service resetting quota after a plan change). For admin tools use
+  // AdminSetQuota.
+  rpc SetOwnerQuota(SetOwnerQuotaRequest) returns (QuotaInfo) {
+    option (google.api.http) = {
+      put: "/v1/owners/{owner_type}/{owner_id}/quota"
+      body: "*"
+    };
+  }
+  // AddOwnerQuota atomically increments an owner's quota by delta_bytes
+  // (positive for purchase, negative for refund). Caller is responsible for
+  // idempotency (e.g. deduplicate by order ID upstream).
+  rpc AddOwnerQuota(AddOwnerQuotaRequest) returns (QuotaInfo) {
+    option (google.api.http) = {
+      post: "/v1/owners/{owner_type}/{owner_id}/quota:add"
+      body: "*"
+    };
+  }
+}
+
+// Owner identifies the owner of a resource (user, group, business, etc.).
+message Owner {
+  OwnerType owner_type = 1 [(buf.validate.field).enum = {defined_only: true}];
+  int64 owner_id = 2 [(buf.validate.field).int64 = {gt: 0}];
+}
+
+// Upload
+
+message GenerateUploadURLRequest {
+  string filename = 1 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  int64 size = 2 [(buf.validate.field).int64 = {gt: 0}];
+  string md5 = 3 [(buf.validate.field).string = {len: 32}];
+  string content_type = 4 [(buf.validate.field).string = {min_len: 1}];
+  string bucket = 5;
+  string file_path = 6;
+  string description = 7;
+  map<string, string> metadata = 8;
+  // vendor is optional. If set (non-UNSPECIFIED), the service validates that
+  // the resolved bucket belongs to this vendor; mismatch returns
+  // BUCKET_VENDOR_MISMATCH. Leave UNSPECIFIED to skip the check (legacy behavior).
+  Vendor vendor = 10;
+  Owner owner = 255;
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 256;
+}
+
+message GenerateUploadURLResponse {
+  bool instant = 1;
+  int64 file_id = 2;
+  UserFileInfo file_info = 3;
+
+  // upload_token is an HMAC-signed, self-contained token carrying all upload
+  // metadata (owner, bucket, vendor, md5, size, etc.). The client must return
+  // it verbatim to ConfirmUpload. Named "token" not "id" because it carries
+  // state and signature, not just an identifier.
+  string upload_token = 10;
+  string upload_url = 11;
+  string object_key = 12;
+  map<string, string> headers = 13;
+}
+
+message GetSTSCredentialRequest {
+  string bucket = 1;
+  int64 max_size = 2;
+  string filename = 3 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  string md5 = 4 [(buf.validate.field).string = {len: 32}];
+  string content_type = 5 [(buf.validate.field).string = {min_len: 1}];
+  string file_path = 6;
+  string description = 7;
+  map<string, string> metadata = 8;
+  // vendor is optional. Same semantics as GenerateUploadURLRequest.vendor.
+  Vendor vendor = 10;
+  // ttl is optional. If unset, uses storage.sts.default_ttl. Capped at storage.sts.max_ttl.
+  google.protobuf.Duration ttl = 11;
+  // allowed_extensions restricts which file suffixes the issued STS credential
+  // may PUT. Each element must start with '.' (e.g. ".jpg"). Enforced by OSS
+  // at PUT time (Resource wildcards in STS policy). Empty = no restriction.
+  // Service normalizes to lowercase; ".JPG" matches [".jpg"].
+  repeated string allowed_extensions = 12;
+  Owner owner = 255;
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 256;
+}
+
+message GetSTSCredentialResponse {
+  bool instant = 1;
+  int64 file_id = 2;
+  UserFileInfo file_info = 3;
+
+  // upload_token: see GenerateUploadURLResponse.upload_token.
+  string upload_token = 10;
+  string access_key = 11;
+  string secret_key = 12;
+  string security_token = 13;
+  string endpoint = 14;
+  string bucket = 15;
+  string object_key = 16;
+  int64 expires_at = 17;
+}
+
+message BatchGetSTSCredentialRequest {
+  repeated UploadFileMeta files = 1;
+  string bucket = 2;
+  google.protobuf.Duration ttl = 3;
+  // allowed_extensions is batch-level (the whole batch shares one STS
+  // credential); per-file restrictions would require one AssumeRole call per
+  // file, defeating batch's round-trip savings.
+  repeated string allowed_extensions = 4;
+  Owner owner = 255;
+  string request_id = 256;
+}
+
+message UploadFileMeta {
+  string md5 = 1 [(buf.validate.field).string = {len: 32}];
+  int64 size = 2 [(buf.validate.field).int64 = {gt: 0}];
+  string filename = 3 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  string content_type = 4 [(buf.validate.field).string = {min_len: 1}];
+  string file_path = 5;
+  string description = 6;
+  map<string, string> metadata = 7;
+}
+
+message UploadCredentialItem {
+  oneof result {
+    UploadTokenInfo token = 1;
+    ItemError error = 2;
+  }
+}
+
+// UploadTokenInfo carries either an upload_token (client must ConfirmUpload
+// after the upload) or a file_id when MD5 dedup hit (instant upload).
+message UploadTokenInfo {
+  string upload_token = 1;
+  int64 expires_at = 2;
+  // file_id is set when MD5 dedup hit (instant). upload_token is empty in that case.
+  int64 file_id = 3;
+  // object_key is the full OSS object path the client must PUT to (e.g.
+  // "<keyPrefix>/<md5[:2]>/<md5>"). Empty when file_id is set (instant dedup,
+  // no upload needed). Single-file GetSTSCredential callers read object_key
+  // from the top-level response; batch callers read it from each item.
+  string object_key = 4;
+}
+
+message ItemError {
+  int32 index = 1;
+  string code = 2;
+  string message = 3;
+}
+
+message BatchGetSTSCredentialResponse {
+  // Shared STS credential for the whole batch. All per-file uploads use the
+  // same temporary credential; the client differentiates by upload_token.
+  string access_key = 1;
+  string secret_key = 2;
+  string security_token = 3;
+  string endpoint = 4;
+  string bucket = 5;
+  int64 expires_at = 6;
+  // items are ordered to match request.files.
+  repeated UploadCredentialItem items = 7;
+}
+
+message ConfirmUploadRequest {
+  // upload_token is the signed token returned by GenerateUploadURL or
+  // GetSTSCredential. The service verifies its HMAC signature, expiration,
+  // owner, and vendor before finalizing the upload.
+  string upload_token = 1 [(buf.validate.field).string = {min_len: 1}];
+  Owner owner = 255;
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 256;
+}
+
+message ConfirmUploadResponse {
+  int64 file_id = 1;
+  UserFileInfo file_info = 2;
+}
+
+message CancelUploadRequest {
+  string upload_token = 1 [(buf.validate.field).string = {min_len: 1}];
+  Owner owner = 255;
+  string request_id = 256;
+}
+
+// Download
+
+message GenerateDownloadURLRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+  int32 ttl_seconds = 2;
+  // filename, when set, overrides the response-content-disposition filename
+  // browsers save the download as. Empty falls back to the file's stored
+  // Filename (uf.Filename). Use this when the caller wants to download under
+  // a different name than the one stored on the file record.
+  optional string filename = 3;
+  Owner owner = 255;
+}
+
+message GenerateDownloadURLResponse {
+  string download_url = 1;
+  int64 expires_at = 2;
+}
+
+// User File Management
+
+message ListMyFilesRequest {
+  string path_prefix = 1;
+  string extension = 2;
+  string content_type_prefix = 3;
+  SortField order_by = 4;
+  bool descending = 5;
+  int32 page_size = 6;
+  string page_token = 7;
+  Owner owner = 255;
+}
+
+message ListMyFilesResponse {
+  reserved 2;
+  reserved "total_count";
+
+  repeated UserFileInfo files = 1;
+  string next_page_token = 3;
+}
+
+message ListMyFilesPagedRequest {
+  int32 page = 1;                  // 1-based page number
+  int32 page_size = 2;
+  string path_prefix = 3;
+  string extension = 4;
+  string content_type_prefix = 5;
+  SortField order_by = 6;
+  bool descending = 7;
+  Owner owner = 255;
+}
+
+message ListMyFilesPagedResponse {
+  repeated UserFileInfo files = 1;
+  int64 total_count = 2;
+  int32 page = 3;
+  int32 total_pages = 4;
+  bool has_more = 5;
+}
+
+message GetMyFileRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+  Owner owner = 255;
+}
+
+message UpdateMyFileRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+  optional string filename = 2;
+  optional string file_path = 3;
+  optional string description = 4;
+  map<string, string> metadata = 5;
+  // clear_metadata explicitly clears the existing metadata map. Without this
+  // flag, proto3 cannot distinguish "leave metadata unchanged" from "set
+  // metadata to empty" because map fields default to an empty map.
+  optional bool clear_metadata = 7;
+  Owner owner = 255;
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 256;
+}
+
+message DeleteMyFileRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+  Owner owner = 255;
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 256;
+}
+
+message BatchDeleteMyFilesRequest {
+  repeated int64 file_ids = 1 [(buf.validate.field).repeated = {min_items: 1}];
+  Owner owner = 255;
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 256;
+}
+
+message BatchDeleteMyFilesResponse {
+  int32 deleted_count = 1;
+  repeated int64 failed_ids = 2;
+}
+
+// Image Processing
+
+message ImageProcessOp {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_RESIZE = 1;
+    TYPE_CROP = 2;
+    TYPE_QUALITY = 3;
+    TYPE_FORMAT = 4;
+    TYPE_WATERMARK = 5;
+    TYPE_ROTATE = 6;
+  }
+  Type type = 1;
+  int32 width = 2;
+  int32 height = 3;
+  ImageFormat format = 4;
+  int32 quality = 5;
+  ImageResizeMode resize_mode = 6;
+  string watermark_text = 7;
+  int32 rotate_degrees = 8;
+}
+
+message GenerateProcessURLRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+  repeated ImageProcessOp ops = 2 [(buf.validate.field).repeated = {min_items: 1}];
+  int32 ttl_seconds = 3;
+  Owner owner = 255;
+}
+
+message GenerateProcessURLResponse {
+  string url = 1;
+  int64 expires_at = 2;
+}
+
+message GenerateCDNURLRequest {
+  // file_id is the already-uploaded file to generate a CDN URL for.
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+
+  // ops is optional. Empty = plain download URL; non-empty = image
+  // processing URL (only supported by providers whose CDN+origin combo
+  // can process images, currently Aliyun OSS+CDN).
+  // NOTE: no min_items validation — empty ops = plain download.
+  repeated ImageProcessOp ops = 2;
+
+  // ttl is optional. If unset, defaults to storage.cdn.default_ttl.
+  // Clamped to [min_ttl, max_ttl]. Ignored when public=true.
+  google.protobuf.Duration ttl = 3;
+
+  // public requests an unsigned CDN URL for public resources (avatars,
+  // thumbnails). The URL has no auth_key/Signature query params and is
+  // permanent (no expiry). Requires file.is_public=true; otherwise
+  // BAD_REQUEST. CDN console must be configured to allow anonymous access
+  // for these paths (path whitelist or public bucket ACL).
+  bool public = 4;
+
+  // filename, when set, adds response-content-disposition=attachment to the
+  // URL query so browsers download (rather than inline-display) the resource
+  // under this filename. CDN-side requirements apply — see
+  // CDNURLOptions.Filename doc for the per-vendor deployment checklist.
+  optional string filename = 5;
+
+  Owner owner = 255;
+  string request_id = 256;
+}
+
+message GenerateCDNURLResponse {
+  // url is the signed CDN URL. Expires at the time indicated by expires_at.
+  string url = 1;
+  // expires_at is the Unix timestamp at which the URL signature becomes
+  // invalid. After this time the CDN returns 403.
+  int64 expires_at = 2;
+}
+
+// Quota
+
+message GetMyQuotaRequest {
+  Owner owner = 255;
+}
+
+message QuotaInfo {
+  int64 total_bytes = 1;
+  int64 used_bytes = 2;
+  int64 available_bytes = 3;
+  int32 file_count = 4;
+}
+
+// File Info
+
+message UserFileInfo {
+  int64 id = 1;
+  string filename = 2;
+  string file_path = 3;
+  string description = 4;
+  map<string, string> metadata = 5;
+  bool is_public = 6;
+  OwnerType owner_type = 7;
+  int64 size = 10;
+  string content_type = 11;
+  string extension = 12;
+  string md5 = 13;
+  string created_at = 20;
+  string updated_at = 21;
+}
+
+// Admin
+
+message AdminListFilesRequest {
+  OwnerType owner_type = 1;
+  int64 owner_id = 2;
+  string path_prefix = 3;
+  string extension = 4;
+  string content_type_prefix = 5;
+  SortField order_by = 6;
+  bool descending = 7;
+  int32 page_size = 8;
+  string page_token = 9;
+  string provider = 10;
+  string bucket = 11;
+}
+
+message AdminListFilesResponse {
+  repeated AdminFileInfo files = 1;
+  int32 total_count = 2;
+  string next_page_token = 3;
+}
+
+message AdminGetFileRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+}
+
+message AdminDeleteFileRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 2;
+}
+
+message AdminFileInfo {
+  int64 id = 1;
+  OwnerType owner_type = 2;
+  int64 owner_id = 3;
+  string filename = 4;
+  string file_path = 5;
+  string description = 6;
+  map<string, string> metadata = 7;
+  bool is_public = 8;
+  int64 object_id = 9;
+  int64 size = 10;
+  string content_type = 11;
+  string extension = 12;
+  string md5 = 13;
+  string provider = 14;
+  string bucket = 15;
+  string object_key = 16;
+  string created_at = 20;
+  string updated_at = 21;
+}
+
+message AdminGetQuotaRequest {
+  OwnerType owner_type = 1;
+  int64 owner_id = 2 [(buf.validate.field).int64 = {gt: 0}];
+}
+
+message AdminSetQuotaRequest {
+  OwnerType owner_type = 1;
+  int64 owner_id = 2 [(buf.validate.field).int64 = {gt: 0}];
+  int64 total_bytes = 3 [(buf.validate.field).int64 = {gt: 0}];
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 4;
+}
+
+message AdminGetStatsRequest {
+  OwnerType owner_type = 1;  // filter by owner type (0 = all)
+  int64 owner_id = 2;        // filter by owner (0 = all)
+}
+
+message AdminGetStatsResponse {
+  int64 total_objects = 1;     // deduped physical files
+  int64 total_files = 2;      // file references
+  int64 physical_bytes = 4;   // actual cloud storage used (deduped)
+  int64 logical_bytes = 5;    // sum of used_bytes (user quota only)
+
+  repeated OwnerStats owner_stats = 8;
+  repeated ProviderStats provider_stats = 6;
+  repeated BucketStats bucket_stats = 7;
+}
+
+message OwnerStats {
+  OwnerType owner_type = 1;
+  int64 file_count = 2;
+  int64 total_bytes = 3;
+}
+
+message ProviderStats {
+  string provider = 1;
+  int64 object_count = 2;
+  int64 total_bytes = 3;
+}
+
+message BucketStats {
+  string bucket = 1;
+  int64 object_count = 2;
+  int64 total_bytes = 3;
+  int64 file_count = 4;
+}
+
+message ProviderInfo {
+  string name = 1;
+  Vendor vendor = 2;
+  string endpoint = 3;
+  string region = 4;
+}
+
+message AdminListProvidersResponse {
+  repeated ProviderInfo providers = 1;
+}
+
+message BucketInfo {
+  string name = 1;
+  string provider = 2;
+  string key_prefix = 3;
+  BucketACL acl = 4;
+  Vendor vendor = 5;
+}
+
+message AdminListBucketsResponse {
+  repeated BucketInfo buckets = 1;
+}
+
+message AdminSoftDeleteOwnerFilesRequest {
+  OwnerType owner_type = 1 [(buf.validate.field).enum = {defined_only: true}];
+  int64 owner_id = 2 [(buf.validate.field).int64 = {gt: 0}];
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 3;
+}
+
+message AdminSoftDeleteOwnerFilesResponse {
+  int64 files_deleted = 1;
+  int64 bytes_released = 2;
+}
+
+message AdminDeleteOwnerRequest {
+  OwnerType owner_type = 1 [(buf.validate.field).enum = {defined_only: true}];
+  int64 owner_id = 2 [(buf.validate.field).int64 = {gt: 0}];
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 3;
+}
+
+message AdminDeleteOwnerResponse {
+  int64 files_deleted = 1;
+  int64 bytes_released = 2;
+}
+
+// Audit Log
+
+message AuditLogEntry {
+  int64 id = 1;
+  AuditAction action = 2;
+  OwnerType owner_type = 3;
+  int64 owner_id = 4;
+  AuditLogTargetType target_type = 5;
+  int64 target_id = 6;
+  google.protobuf.Struct before = 7;
+  google.protobuf.Struct after = 8;
+  AuditLogStatus status = 9;
+  string error_message = 10;
+  string request_id = 11;
+  string created_at = 12;
+}
+
+message ListMyAuditLogsRequest {
+  AuditAction action = 1;
+  AuditLogTargetType target_type = 2;
+  string start_time = 3;
+  string end_time = 4;
+  int32 page_size = 5;
+  string page_token = 6;
+  Owner owner = 255;
+}
+
+message ListMyAuditLogsResponse {
+  repeated AuditLogEntry logs = 1;
+  int32 total_count = 2;
+  string next_page_token = 3;
+}
+
+message AdminListAuditLogsRequest {
+  AuditAction action = 1;
+  AuditLogTargetType target_type = 2;
+  AuditLogStatus status = 3;
+  string request_id = 4;
+  OwnerType owner_type = 5;
+  int64 owner_id = 6;
+  int64 target_id = 7;
+  string start_time = 8;
+  string end_time = 9;
+  int32 page_size = 10;
+  string page_token = 11;
+}
+
+message AdminListAuditLogsResponse {
+  repeated AuditLogEntry logs = 1;
+  int32 total_count = 2;
+  string next_page_token = 3;
+}
+
+// Business-facing quota management.
+
+message SetOwnerQuotaRequest {
+  OwnerType owner_type = 1;
+  int64 owner_id = 2 [(buf.validate.field).int64 = {gt: 0}];
+  int64 total_bytes = 3 [(buf.validate.field).int64 = {gt: 0}];
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 4;
+}
+
+message AddOwnerQuotaRequest {
+  OwnerType owner_type = 1;
+  int64 owner_id = 2 [(buf.validate.field).int64 = {gt: 0}];
+  // delta_bytes may be negative (refund) or positive (purchase).
+  int64 delta_bytes = 3;
+
+  // request_id is optional. If set, recorded in audit logs for traceability.
+  string request_id = 4;
+}

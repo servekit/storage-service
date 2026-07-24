@@ -1,0 +1,224 @@
+server:
+  grpc_addr: ":9000"
+  http_addr: ":8080"
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: storage_service
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 10
+  conn_max_lifetime: 5m
+  table_prefix: "stor_"           # prefix for all table names; migration scripts must use matching names
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+storage:
+  upload_token_ttl: 30m
+  upload_token_secret: ${UPLOAD_TOKEN_SECRET}
+  default_quota_bytes: 10737418240    # 10GB
+  default_bucket: "default"
+  orphan_retention: 2h
+  soft_delete_retention: 168h         # 7 days
+  deleted_owner_retention: 720h       # 30 days
+
+  sts:
+    default_ttl: 15m
+    max_ttl: 1h
+    # safety_margin is subtracted from a credential's remaining lifetime when
+    # computing the cache TTL, so any cache hit hands out a credential with
+    # at least this much usable life at the cloud provider. Without it, a
+    # cache hit near expiry returns a token with seconds-to-live and in-flight
+    # uploads get rejected. Must be < max_ttl (validated at startup).
+    safety_margin: 5m
+    # read_refresh_window is the read-side last line of defense: a cached
+    # credential with remaining lifetime at or below this window is treated
+    # as a miss and re-issued. Covers wall-clock drift and edge cases the
+    # safety_margin clamp can't catch. Must be < safety_margin (validated at
+    # startup).
+    read_refresh_window: 30s
+    lock:
+      prefix: "sts:lock"
+      ttl: 10s
+      tries: 3
+      wait: 50ms
+
+  cdn:
+    # TTL defaults and limits for GenerateCDNURL. Per-call ttl in the
+    # request is clamped to [min_ttl, max_ttl]; 0 uses default_ttl.
+    default_ttl: 1h
+    min_ttl: 5m
+    max_ttl: 24h
+    # ------------------------------------------------------------------
+    # CDN console deployment checklist (per bucket with cdn: configured):
+    #
+    # 1. Cache key must EXCLUDE auth params so signature churn doesn't
+    #    fragment the cache:
+    #      - Aliyun CDN  → "过滤参数" = auth_key
+    #      - CloudFront  → Cache Policy: cache key = path only
+    #
+    # 2. Origin forwarding — needed for response-content-disposition (i.e.
+    #    GenerateCDNURL with filename, and GenerateDownloadURL). The query
+    #    must reach OSS/S3 so the origin sets the Content-Disposition header:
+    #      - Aliyun CDN  → "回源参数" includes response-content-disposition
+    #                      (default behavior; verify in console)
+    #      - CloudFront  → Origin Request Policy: forward response-content-
+    #                      disposition (managed AllViewerExceptsHostHeader,
+    #                      or a custom one). Without it the query is dropped
+    #                      at the edge and the browser will not download.
+    #
+    # 3. response-content-disposition should ALSO be excluded from the cache
+    #    key (different filenames over the same object shouldn't fragment
+    #    the cache).
+    # ------------------------------------------------------------------
+
+  rate_limit:
+    prefix: "storage:ratelimit"
+    rules:
+      "upload:1":            # OWNER_TYPE_USER
+        - window: 1m
+          max: 10
+        - window: 1h
+          max: 200
+      "upload:4":            # OWNER_TYPE_BUSINESS
+        - window: 1m
+          max: 100
+        - window: 1h
+          max: 2000
+
+  providers:
+    - name: aliyun-primary
+      vendor: VENDOR_ALIYUN_OSS
+      endpoint: oss-cn-hangzhou.aliyuncs.com
+      # region: cn-hangzhou
+      access_key: ${ALIYUN_ACCESS_KEY}
+      secret_key: ${ALIYUN_SECRET_KEY}
+      # role_arn enables STS via GetSTSCredential. Get from RAM console.
+      # Format: acs:ram::<account-id>:role/<role-name>
+      # role_arn: "acs:ram::1234567890:role/storage-uploader"
+      buckets:
+        - name: default
+          key_prefix: "uploads/"
+          acl: private
+
+    - name: aws-us-east
+      vendor: VENDOR_AWS_S3
+      region: us-east-1
+      access_key: ${AWS_ACCESS_KEY}
+      secret_key: ${AWS_SECRET_KEY}
+
+    # Example Aliyun OSS provider with CDN (Type A signed URL) acceleration.
+    # CDN config lives under the bucket — same provider can host multiple
+    # buckets with different CDN domains. Uncomment and fill in.
+    # - name: aliyun-prod-cdn
+    #   vendor: VENDOR_ALIYUN_OSS
+    #   region: cn-hangzhou
+    #   endpoint: oss-cn-hangzhou.aliyuncs.com
+    #   access_key: ${ALIYUN_AK}
+    #   secret_key: ${ALIYUN_SK}
+    #   role_arn: "acs:ram::1234567890:role/storage-uploader"
+    #   buckets:
+    #     - name: photos
+    #       key_prefix: "uploads/"
+    #       acl: private
+    #       cdn:
+    #         # CDN URL signing — required for GenerateCDNURL RPC. The same key
+    #         # must be configured in the Aliyun CDN console (Domain → Access
+    #         # Control → URL Authentication → Type A → Primary Key).
+    #         domain: cdn.example.com
+    #         auth_key: ${ALIYUN_CDN_AUTH_KEY}
+
+    # Example S3 provider with CloudFront (Signed URL) acceleration.
+    # - name: s3-prod-cdn
+    #   vendor: VENDOR_S3_COMPATIBLE
+    #   region: us-east-1
+    #   endpoint: https://s3.amazonaws.com
+    #   access_key: ${AWS_AK}
+    #   secret_key: ${AWS_SK}
+    #   buckets:
+    #     - name: photos
+    #       key_prefix: "uploads/"
+    #       acl: private
+    #       cdn:
+    #         # CloudFront signs with RSA. auth_key is a file path to the PEM
+    #         # private key. Key pair ID comes from AWS account → CloudFront →
+    #         # Key pairs. Trusted key group must be attached to the distribution.
+    #         domain: d111111abcdef8.cloudfront.net
+    #         auth_key: /etc/storage-service/cloudfront.pem
+    #         key_pair_id: ${CLOUDFRONT_KEY_PAIR_ID}
+
+    # ------------------------------------------------------------------
+    # Phase 1 vendors — not yet implemented. Configurations below will
+    # fail validation with "vendor VENDOR_X not yet implemented (coming
+    # in Phase 1)" until the corresponding provider PR lands.
+    # ------------------------------------------------------------------
+
+    # Tencent Cloud COS (Type A signed URL). Bucket name MUST include the
+    # APPID suffix (e.g. mybucket-1250000000). STS uses CAM STS — RoleARN
+    # is NOT used; leave it empty.
+    # - name: tencent-prod
+    #   vendor: VENDOR_TENCENT_COS
+    #   endpoint: cos.ap-guangzhou.myqcloud.com
+    #   region: ap-guangzhou
+    #   access_key: ${TENCENT_SECRET_ID}
+    #   secret_key: ${TENCENT_SECRET_KEY}
+    #   # role_arn intentionally omitted — Tencent CAM STS doesn't use it
+    #   buckets:
+    #     - name: mybucket-1250000000
+    #       key_prefix: "uploads/"
+    #       acl: private
+    #       cdn:
+    #         domain: cdn.example.com
+    #         auth_key: ${TENCENT_CDN_AUTH_KEY}
+
+    # Huawei Cloud OBS (Type A signed URL). STS uses IAM Agency —
+    # role_arn is the Agency name (NOT an ARN).
+    # - name: huawei-prod
+    #   vendor: VENDOR_HUAWEI_OBS
+    #   endpoint: obs.cn-north-4.myhuaweicloud.com
+    #   region: cn-north-4
+    #   access_key: ${HUAWEI_AK}
+    #   secret_key: ${HUAWEI_SK}
+    #   role_arn: "storage-uploader-agency"  # Agency name from IAM console
+    #   domain_id: "${HUAWEI_DOMAIN_ID}"  # Huawei account UID; required for STS via Agency
+    #   buckets:
+    #     - name: mybucket
+    #       key_prefix: "uploads/"
+    #       acl: private
+    #       cdn:
+    #         domain: cdn.example.com
+    #         auth_key: ${HUAWEI_CDN_AUTH_KEY}
+
+    # Volcengine TOS (Type A signed URL). STS uses IAM AssumeRole with TRN
+    # format. Bucket ACL is enforced via TOS PutObjectACL.
+    # - name: volcengine-prod
+    #   vendor: VENDOR_VOLCENGINE_TOS
+    #   endpoint: tos-cn-beijing.volces.com
+    #   region: cn-beijing
+    #   access_key: ${VOLC_AK}
+    #   secret_key: ${VOLC_SK}
+    #   role_arn: "trn:iam::1000000000:role/storage-uploader"
+    #   buckets:
+    #     - name: mybucket
+    #       key_prefix: "uploads/"
+    #       acl: private
+    #       cdn:
+    #         domain: cdn.example.com
+    #         auth_key: ${VOLC_CDN_AUTH_KEY}
+
+third_party:
+  gid:
+    mode: module
+    config:
+      machine_id: 1
+      start_time: "2025-01-01T00:00:00Z"
+
+log:
+  level: info
+  format: json
