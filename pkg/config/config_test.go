@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -245,6 +246,54 @@ func TestEnvOverride(t *testing.T) {
 	if cfg.Log.Level != "error" {
 		t.Errorf("Log.Level = %q, want %q (env override)", cfg.Log.Level, "error")
 	}
+}
+
+// TestExpandEnv verifies ${VAR} placeholders in the config file are expanded
+// from the environment — including inside the providers slice. Each provider
+// account references its own credential via a distinct variable name, which is
+// how multiple same-vendor accounts (e.g. two Aliyun accounts) coexist under
+// static config without colliding.
+func TestExpandEnv(t *testing.T) {
+	yaml := `
+storage:
+  upload_token_secret: ${UPLOAD_TOKEN_SECRET}
+  default_bucket: "default"
+  providers:
+    - name: aliyun-main
+      vendor: VENDOR_ALIYUN_OSS
+      access_key: ${ALIYUN_MAIN_AK}
+      secret_key: ${ALIYUN_MAIN_SK}
+    - name: aliyun-backup
+      vendor: VENDOR_ALIYUN_OSS
+      access_key: ${ALIYUN_BACKUP_AK}
+      secret_key: ${ALIYUN_BACKUP_SK}
+
+third_party:
+  gid:
+    mode: grpc
+    target: "localhost:9000"
+`
+	cfgPath := writeTestConfigFile(t, yaml)
+	t.Setenv("STORAGE_SERVICE_CONFIG", cfgPath)
+	t.Setenv("UPLOAD_TOKEN_SECRET", "expanded-token-secret")
+	t.Setenv("ALIYUN_MAIN_AK", "main-ak")
+	t.Setenv("ALIYUN_MAIN_SK", "main-sk")
+	t.Setenv("ALIYUN_BACKUP_AK", "backup-ak")
+	t.Setenv("ALIYUN_BACKUP_SK", "backup-sk")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	// Top-level scalar expansion.
+	assert.Equal(t, "expanded-token-secret", cfg.Storage.UploadTokenSecret)
+
+	// Per-account expansion inside the providers slice: same vendor, distinct
+	// credentials resolved via distinct env var names.
+	require.Len(t, cfg.Storage.Providers, 2)
+	assert.Equal(t, "main-ak", cfg.Storage.Providers[0].AccessKey)
+	assert.Equal(t, "main-sk", cfg.Storage.Providers[0].SecretKey)
+	assert.Equal(t, "backup-ak", cfg.Storage.Providers[1].AccessKey)
+	assert.Equal(t, "backup-sk", cfg.Storage.Providers[1].SecretKey)
 }
 
 // TestSTSConfig_Validate covers the consistency rules enforced at startup:
@@ -544,4 +593,52 @@ func TestCDNRuntimeConfig_Validate_TTLBounds(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "max_ttl")
 	})
+}
+
+// loadEnvFile parses a dotenv file and sets each KEY=VALUE into the test
+// environment. Mirrors docker-compose `env_file` semantics: blank lines and
+// lines starting with '#' are skipped, inline comments are NOT supported (the
+// value is everything after the first '='), and quotes are not stripped.
+func loadEnvFile(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err, "read env file: %s", path)
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		require.NotEqual(t, -1, idx, "malformed env line (no '='): %q", line)
+		key := strings.TrimSpace(line[:idx])
+		require.NotEmpty(t, key, "empty key in env line: %q", line)
+		t.Setenv(key, line[idx+1:])
+	}
+}
+
+// TestExampleConfigsAreLoadable guards that the committed example files stay
+// self-consistent: it loads config.example.yaml with every ${VAR} resolved
+// from .env.example and asserts Load() + Validate() succeed with real
+// (expanded) values. Catches drift in either direction — a ${VAR} in the YAML
+// with no matching var in .env.example, or an env value that breaks parsing.
+func TestExampleConfigsAreLoadable(t *testing.T) {
+	root := filepath.Join("..", "..")
+	yamlPath := filepath.Join(root, "config.example.yaml")
+	envPath := filepath.Join(root, ".env.example")
+
+	loadEnvFile(t, envPath)
+	t.Setenv("STORAGE_SERVICE_CONFIG", yamlPath)
+
+	cfg, err := Load()
+	require.NoError(t, err, "config.example.yaml + .env.example must load and validate")
+
+	// Spot-check that ${VAR} was actually expanded, not left as a literal.
+	assert.Equal(t, ":9000", cfg.Server.GRPCAddr)
+	assert.Equal(t, "default", cfg.Storage.DefaultBucket)
+	assert.NotEqual(t, "${STORAGE_UPLOAD_TOKEN_SECRET}", cfg.Storage.UploadTokenSecret,
+		"env expansion must have replaced the placeholder")
+	require.Len(t, cfg.Storage.Providers, 2)
+	assert.Equal(t, "aliyun-primary", cfg.Storage.Providers[0].Name)
+	assert.Equal(t, "VENDOR_AWS_S3", cfg.Storage.Providers[1].Vendor)
+	assert.Equal(t, int64(10*1024*1024*1024), cfg.Storage.DefaultQuotaBytes)
 }

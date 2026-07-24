@@ -1,60 +1,64 @@
 server:
-  grpc_addr: ":9000"
-  http_addr: ":8080"
+  grpc_addr: ${SERVER_GRPC_ADDR}
+  http_addr: ${SERVER_HTTP_ADDR}
 
 database:
-  host: localhost
-  port: 5432
-  user: postgres
-  password: postgres
-  dbname: storage_service
-  sslmode: disable
-  max_open_conns: 25
-  max_idle_conns: 10
-  conn_max_lifetime: 5m
-  table_prefix: "stor_"           # prefix for all table names; migration scripts must use matching names
+  host: ${DB_HOST}
+  port: ${DB_PORT}
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
+  dbname: ${DB_NAME}
+  sslmode: ${DB_SSLMODE}
+  max_open_conns: ${DB_MAX_OPEN_CONNS}
+  max_idle_conns: ${DB_MAX_IDLE_CONNS}
+  conn_max_lifetime: ${DB_CONN_MAX_LIFETIME}
+  # prefix for all table names; migration scripts must use matching names
+  table_prefix: ${DB_TABLE_PREFIX}
 
 redis:
-  addr: "localhost:6379"
-  password: ""
-  db: 0
+  addr: ${REDIS_ADDR}
+  password: ${REDIS_PASSWORD}
+  db: ${REDIS_DB}
 
 storage:
-  upload_token_ttl: 30m
-  upload_token_secret: ${UPLOAD_TOKEN_SECRET}
-  default_quota_bytes: 10737418240    # 10GB
-  default_bucket: "default"
-  orphan_retention: 2h
-  soft_delete_retention: 168h         # 7 days
-  deleted_owner_retention: 720h       # 30 days
+  upload_token_ttl: ${STORAGE_UPLOAD_TOKEN_TTL}
+  upload_token_secret: ${STORAGE_UPLOAD_TOKEN_SECRET}
+  # 10GB
+  default_quota_bytes: ${STORAGE_DEFAULT_QUOTA_BYTES}
+  default_bucket: ${STORAGE_DEFAULT_BUCKET}
+  orphan_retention: ${STORAGE_ORPHAN_RETENTION}
+  # 7 days
+  soft_delete_retention: ${STORAGE_SOFT_DELETE_RETENTION}
+  # 30 days
+  deleted_owner_retention: ${STORAGE_DELETED_OWNER_RETENTION}
 
   sts:
-    default_ttl: 15m
-    max_ttl: 1h
+    default_ttl: ${STS_DEFAULT_TTL}
+    max_ttl: ${STS_MAX_TTL}
     # safety_margin is subtracted from a credential's remaining lifetime when
-    # computing the cache TTL, so any cache hit hands out a credential with
-    # at least this much usable life at the cloud provider. Without it, a
-    # cache hit near expiry returns a token with seconds-to-live and in-flight
+    # computing the cache TTL, so any cache hit hands out a credential with at
+    # least this much usable life at the cloud provider. Without it, a cache
+    # hit near expiry returns a token with seconds-to-live and in-flight
     # uploads get rejected. Must be < max_ttl (validated at startup).
-    safety_margin: 5m
+    safety_margin: ${STS_SAFETY_MARGIN}
     # read_refresh_window is the read-side last line of defense: a cached
-    # credential with remaining lifetime at or below this window is treated
-    # as a miss and re-issued. Covers wall-clock drift and edge cases the
+    # credential with remaining lifetime at or below this window is treated as
+    # a miss and re-issued. Covers wall-clock drift and edge cases the
     # safety_margin clamp can't catch. Must be < safety_margin (validated at
     # startup).
-    read_refresh_window: 30s
+    read_refresh_window: ${STS_READ_REFRESH_WINDOW}
     lock:
-      prefix: "sts:lock"
-      ttl: 10s
-      tries: 3
-      wait: 50ms
+      prefix: ${STS_LOCK_PREFIX}
+      ttl: ${STS_LOCK_TTL}
+      tries: ${STS_LOCK_TRIES}
+      wait: ${STS_LOCK_WAIT}
 
   cdn:
-    # TTL defaults and limits for GenerateCDNURL. Per-call ttl in the
-    # request is clamped to [min_ttl, max_ttl]; 0 uses default_ttl.
-    default_ttl: 1h
-    min_ttl: 5m
-    max_ttl: 24h
+    # TTL defaults and limits for GenerateCDNURL. Per-call ttl in the request
+    # is clamped to [min_ttl, max_ttl]; 0 uses default_ttl.
+    default_ttl: ${CDN_DEFAULT_TTL}
+    min_ttl: ${CDN_MIN_TTL}
+    max_ttl: ${CDN_MAX_TTL}
     # ------------------------------------------------------------------
     # CDN console deployment checklist (per bucket with cdn: configured):
     #
@@ -79,50 +83,51 @@ storage:
     # ------------------------------------------------------------------
 
   rate_limit:
-    prefix: "storage:ratelimit"
+    prefix: ${RATE_LIMIT_PREFIX}
     rules:
       "upload:1":            # OWNER_TYPE_USER
-        - window: 1m
-          max: 10
-        - window: 1h
-          max: 200
+        - window: ${RATE_LIMIT_USER_WINDOW_1M}
+          max: ${RATE_LIMIT_USER_MAX_1M}
+        - window: ${RATE_LIMIT_USER_WINDOW_1H}
+          max: ${RATE_LIMIT_USER_MAX_1H}
       "upload:4":            # OWNER_TYPE_BUSINESS
-        - window: 1m
-          max: 100
-        - window: 1h
-          max: 2000
+        - window: ${RATE_LIMIT_BIZ_WINDOW_1M}
+          max: ${RATE_LIMIT_BIZ_MAX_1M}
+        - window: ${RATE_LIMIT_BIZ_WINDOW_1H}
+          max: ${RATE_LIMIT_BIZ_MAX_1H}
 
   providers:
-    - name: aliyun-primary
-      vendor: VENDOR_ALIYUN_OSS
-      endpoint: oss-cn-hangzhou.aliyuncs.com
+    - name: ${ALIYUN_PRIMARY_NAME}
+      vendor: ${ALIYUN_PRIMARY_VENDOR}
+      endpoint: ${ALIYUN_PRIMARY_ENDPOINT}
       # region: cn-hangzhou
-      access_key: ${ALIYUN_ACCESS_KEY}
-      secret_key: ${ALIYUN_SECRET_KEY}
+      access_key: ${ALIYUN_PRIMARY_ACCESS_KEY}
+      secret_key: ${ALIYUN_PRIMARY_SECRET_KEY}
       # role_arn enables STS via GetSTSCredential. Get from RAM console.
       # Format: acs:ram::<account-id>:role/<role-name>
-      # role_arn: "acs:ram::1234567890:role/storage-uploader"
+      # role_arn: ${ALIYUN_PRIMARY_ROLE_ARN}
       buckets:
-        - name: default
-          key_prefix: "uploads/"
-          acl: private
+        - name: ${ALIYUN_PRIMARY_BUCKET_NAME}
+          key_prefix: ${ALIYUN_PRIMARY_BUCKET_KEY_PREFIX}
+          acl: ${ALIYUN_PRIMARY_BUCKET_ACL}
 
-    - name: aws-us-east
-      vendor: VENDOR_AWS_S3
-      region: us-east-1
-      access_key: ${AWS_ACCESS_KEY}
-      secret_key: ${AWS_SECRET_KEY}
+    - name: ${AWS_USEAST_NAME}
+      vendor: ${AWS_USEAST_VENDOR}
+      region: ${AWS_USEAST_REGION}
+      access_key: ${AWS_USEAST_ACCESS_KEY}
+      secret_key: ${AWS_USEAST_SECRET_KEY}
 
     # Example Aliyun OSS provider with CDN (Type A signed URL) acceleration.
     # CDN config lives under the bucket — same provider can host multiple
-    # buckets with different CDN domains. Uncomment and fill in.
+    # buckets with different CDN domains. Uncomment and fill in. Each var
+    # below must also be added to .env when you enable this provider.
     # - name: aliyun-prod-cdn
     #   vendor: VENDOR_ALIYUN_OSS
     #   region: cn-hangzhou
     #   endpoint: oss-cn-hangzhou.aliyuncs.com
-    #   access_key: ${ALIYUN_AK}
-    #   secret_key: ${ALIYUN_SK}
-    #   role_arn: "acs:ram::1234567890:role/storage-uploader"
+    #   access_key: ${ALIYUN_PROD_CDN_ACCESS_KEY}
+    #   secret_key: ${ALIYUN_PROD_CDN_SECRET_KEY}
+    #   role_arn: ${ALIYUN_PROD_CDN_ROLE_ARN}
     #   buckets:
     #     - name: photos
     #       key_prefix: "uploads/"
@@ -132,15 +137,16 @@ storage:
     #         # must be configured in the Aliyun CDN console (Domain → Access
     #         # Control → URL Authentication → Type A → Primary Key).
     #         domain: cdn.example.com
-    #         auth_key: ${ALIYUN_CDN_AUTH_KEY}
+    #         auth_key: ${ALIYUN_PROD_CDN_AUTH_KEY}
 
-    # Example S3 provider with CloudFront (Signed URL) acceleration.
+    # Example S3 provider with CloudFront (Signed URL) acceleration. Same as
+    # above: uncomment and add the vars to .env.
     # - name: s3-prod-cdn
     #   vendor: VENDOR_S3_COMPATIBLE
     #   region: us-east-1
     #   endpoint: https://s3.amazonaws.com
-    #   access_key: ${AWS_AK}
-    #   secret_key: ${AWS_SK}
+    #   access_key: ${S3_PROD_CDN_ACCESS_KEY}
+    #   secret_key: ${S3_PROD_CDN_SECRET_KEY}
     #   buckets:
     #     - name: photos
     #       key_prefix: "uploads/"
@@ -154,20 +160,20 @@ storage:
     #         key_pair_id: ${CLOUDFRONT_KEY_PAIR_ID}
 
     # ------------------------------------------------------------------
-    # Phase 1 vendors — not yet implemented. Configurations below will
-    # fail validation with "vendor VENDOR_X not yet implemented (coming
-    # in Phase 1)" until the corresponding provider PR lands.
+    # Phase 1 vendors — not yet implemented. Configurations below will fail
+    # validation with "vendor VENDOR_X not yet implemented (coming in Phase
+    # 1)" until the corresponding provider PR lands.
     # ------------------------------------------------------------------
 
     # Tencent Cloud COS (Type A signed URL). Bucket name MUST include the
-    # APPID suffix (e.g. mybucket-1250000000). STS uses CAM STS — RoleARN
-    # is NOT used; leave it empty.
+    # APPID suffix (e.g. mybucket-1250000000). STS uses CAM STS — RoleARN is
+    # NOT used; leave it empty.
     # - name: tencent-prod
     #   vendor: VENDOR_TENCENT_COS
     #   endpoint: cos.ap-guangzhou.myqcloud.com
     #   region: ap-guangzhou
-    #   access_key: ${TENCENT_SECRET_ID}
-    #   secret_key: ${TENCENT_SECRET_KEY}
+    #   access_key: ${TENCENT_PROD_ACCESS_KEY}
+    #   secret_key: ${TENCENT_PROD_SECRET_KEY}
     #   # role_arn intentionally omitted — Tencent CAM STS doesn't use it
     #   buckets:
     #     - name: mybucket-1250000000
@@ -175,25 +181,25 @@ storage:
     #       acl: private
     #       cdn:
     #         domain: cdn.example.com
-    #         auth_key: ${TENCENT_CDN_AUTH_KEY}
+    #         auth_key: ${TENCENT_PROD_CDN_AUTH_KEY}
 
-    # Huawei Cloud OBS (Type A signed URL). STS uses IAM Agency —
-    # role_arn is the Agency name (NOT an ARN).
+    # Huawei Cloud OBS (Type A signed URL). STS uses IAM Agency — role_arn
+    # is the Agency name (NOT an ARN).
     # - name: huawei-prod
     #   vendor: VENDOR_HUAWEI_OBS
     #   endpoint: obs.cn-north-4.myhuaweicloud.com
     #   region: cn-north-4
-    #   access_key: ${HUAWEI_AK}
-    #   secret_key: ${HUAWEI_SK}
+    #   access_key: ${HUAWEI_PROD_ACCESS_KEY}
+    #   secret_key: ${HUAWEI_PROD_SECRET_KEY}
     #   role_arn: "storage-uploader-agency"  # Agency name from IAM console
-    #   domain_id: "${HUAWEI_DOMAIN_ID}"  # Huawei account UID; required for STS via Agency
+    #   domain_id: ${HUAWEI_PROD_DOMAIN_ID}  # Huawei account UID; required for STS via Agency
     #   buckets:
     #     - name: mybucket
     #       key_prefix: "uploads/"
     #       acl: private
     #       cdn:
     #         domain: cdn.example.com
-    #         auth_key: ${HUAWEI_CDN_AUTH_KEY}
+    #         auth_key: ${HUAWEI_PROD_CDN_AUTH_KEY}
 
     # Volcengine TOS (Type A signed URL). STS uses IAM AssumeRole with TRN
     # format. Bucket ACL is enforced via TOS PutObjectACL.
@@ -201,8 +207,8 @@ storage:
     #   vendor: VENDOR_VOLCENGINE_TOS
     #   endpoint: tos-cn-beijing.volces.com
     #   region: cn-beijing
-    #   access_key: ${VOLC_AK}
-    #   secret_key: ${VOLC_SK}
+    #   access_key: ${VOLC_PROD_ACCESS_KEY}
+    #   secret_key: ${VOLC_PROD_SECRET_KEY}
     #   role_arn: "trn:iam::1000000000:role/storage-uploader"
     #   buckets:
     #     - name: mybucket
@@ -210,15 +216,15 @@ storage:
     #       acl: private
     #       cdn:
     #         domain: cdn.example.com
-    #         auth_key: ${VOLC_CDN_AUTH_KEY}
+    #         auth_key: ${VOLC_PROD_CDN_AUTH_KEY}
 
 third_party:
   gid:
-    mode: module
+    mode: ${GID_MODE}
     config:
-      machine_id: 1
-      start_time: "2025-01-01T00:00:00Z"
+      machine_id: ${GID_MACHINE_ID}
+      start_time: ${GID_START_TIME}
 
 log:
-  level: info
-  format: json
+  level: ${LOG_LEVEL}
+  format: ${LOG_FORMAT}

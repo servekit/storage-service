@@ -273,12 +273,21 @@ type BucketConfig struct {
 	CDN *CDNConfig
 }
 
-// Load reads configuration from file and environment, applies defaults, validates, and returns a Config.
+// Load reads configuration from file and environment, expands ${VAR}
+// references in the file against the environment, applies defaults, then
+// validates and returns a Config.
+//
+// Env expansion lets config.yaml reference secrets by name
+// (e.g. access_key: ${ALIYUN_AK}) instead of holding the literal value, so
+// multiple same-vendor accounts each resolve their own credential via a
+// distinct variable name. Unset vars expand to "" (os.ExpandEnv semantics),
+// which Validate then surfaces as a missing-required-field error.
 func Load() (*Config, error) {
 	var cfg Config
 	if err := configx.Load(&cfg,
 		configx.WithServiceName(serviceName),
 		configx.WithEnvPrefix(envPrefix),
+		configx.WithExpandEnv(),
 	); err != nil {
 		return nil, err
 	}
