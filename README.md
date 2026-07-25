@@ -66,7 +66,7 @@ cp .env.example .env
 ### 2. 初始化数据库（GORM AutoMigrate）
 
 ```bash
-make migrate        # 等价于 go run ./cmd/migrate/
+make migrate        # 等价于 go run ./cmd/server migrate
 ```
 
 ### 3. 运行服务
@@ -157,14 +157,14 @@ ALIYUN_BACKUP_SK=...
 ### 二进制部署
 
 ```bash
-make build                 # 产出 bin/server、bin/migrate
-./bin/migrate              # 初始化/迁移数据库
-./bin/server               # 启动服务
+make build                 # 产出 bin/storage-service（server + migrate 合一）
+./bin/storage-service migrate   # 初始化/迁移数据库
+./bin/storage-service          # 启动服务（等价于 ./bin/storage-service serve）
 ```
 
 ### Docker 部署
 
-镜像内含 `server` 与 `migrate` 两个二进制。示例 `docker-compose.yml`：
+镜像是单二进制 `storage-service`，`migrate` 子命令跑迁移（靠 ENTRYPOINT 参数透传）。示例 `docker-compose.yml`：
 
 ```yaml
 services:
@@ -199,7 +199,7 @@ volumes:
 
 ```bash
 docker compose up -d postgres redis          # 先起依赖
-docker compose run --rm --entrypoint /bin/migrate storage-service   # 跑迁移
+docker compose run --rm storage-service migrate   # 跑迁移
 docker compose up -d storage-service         # 启动服务
 ```
 
@@ -244,8 +244,7 @@ make tidy        # go mod tidy
 storage-service/
 ├── api/proto/storage/    # Protobuf 定义
 ├── cmd/
-│   ├── server/           # gRPC 服务启动入口
-│   └── migrate/          # GORM AutoMigrate 入口
+│   └── server/           # 启动入口：serve（默认）+ migrate 子命令（单二进制）
 ├── gen/                  # protoc/buf 生成代码
 ├── internal/
 │   ├── service/          # gRPC service 实现

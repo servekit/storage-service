@@ -1,13 +1,18 @@
 .PHONY: all build test lint generate migrate-up migrate-down fmt vet tidy run proto
 
-## build: Build server and migrate binaries into bin/
+# Published binary name. Override to ship under a different name without
+# touching the source tree, e.g. `make build BIN_NAME=storagesvc`.
+# The Go package path stays cmd/server regardless.
+BIN_NAME := storage-service
+CMD_DIR  := cmd/server
+
+## build: Build the storage-service binary (server + migrate in one)
 build:
-	go build -o bin/server ./cmd/server/
-	go build -o bin/migrate ./cmd/migrate/
+	go build -o bin/$(BIN_NAME) ./$(CMD_DIR)/
 
 ## run: Run the server locally
 run:
-	go run ./cmd/server/
+	go run ./$(CMD_DIR)/
 
 ## test: Run tests with race detector
 test:
@@ -34,9 +39,9 @@ generate:
 proto:
 	buf generate
 
-## migrate: Run GORM AutoMigrate
+## migrate: Run database migrations (AutoMigrate) via the unified binary
 migrate:
-	go run ./cmd/migrate/
+	go run ./$(CMD_DIR) migrate
 
 ## tidy: Run go mod tidy
 tidy:

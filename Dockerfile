@@ -9,16 +9,17 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/server ./cmd/server
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/storage-service ./cmd/server
 
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY --from=builder /bin/server /bin/server
-COPY --from=builder /bin/migrate /bin/migrate
+COPY --from=builder /bin/storage-service /bin/storage-service
 
 EXPOSE 19093 18083
 
-ENTRYPOINT ["/bin/server"]
+# Args pass through to the binary:
+#   docker run <image>            -> /bin/storage-service         (start server)
+#   docker run <image> migrate    -> /bin/storage-service migrate (run migrations)
+ENTRYPOINT ["/bin/storage-service"]
