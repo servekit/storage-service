@@ -1,4 +1,4 @@
-// Package main is the entry point for the storage service server.
+// Command server is the storage-service gRPC + HTTP entry point.
 package main
 
 import (
