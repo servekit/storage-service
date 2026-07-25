@@ -42,7 +42,7 @@
 **gid-service 模式**（`third_party.gid.mode`）：
 
 - `module`：in-process 嵌入，无需单独部署，需配 `machine_id` / `start_time`
-- `grpc`：远程调用独立部署的 gid-service，需配 `target`（如 `localhost:9000`）
+- `grpc`：远程调用独立部署的 gid-service，需配 `target`（如 `localhost:19091`）
 
 ### Go 关键依赖
 
@@ -75,8 +75,8 @@ make migrate        # 等价于 go run ./cmd/migrate/
 make run            # 等价于 go run ./cmd/server/
 ```
 
-- gRPC：`:9000`
-- HTTP gateway：`:8080`
+- gRPC：`:19093`
+- HTTP gateway：`:18083`
 
 ## 配置
 
@@ -152,7 +152,7 @@ ALIYUN_BACKUP_SK=...
 - 位于已做鉴权的 API 网关 / service mesh / sidecar 之后
 - 作为 Go 模块嵌入宿主进程，由宿主实施鉴权
 
-在 `pkg.NewServer` 增加 auth 拦截器之前，**不要**将 `:9000`（gRPC）或 `:8080`（gateway）直接暴露到不可信网络。
+在 `pkg.NewServer` 增加 auth 拦截器之前，**不要**将 `:19093`（gRPC）或 `:18083`（gateway）直接暴露到不可信网络。
 
 ### 二进制部署
 
@@ -187,8 +187,8 @@ services:
       # 挂载到 configx 默认搜索路径，无需额外指定 -config
       - ./config.yaml:/etc/storage-service/config.yaml:ro
     ports:
-      - "9000:9000"
-      - "8080:8080"
+      - "19093:19093"
+      - "18083:18083"
     depends_on:
       - postgres
       - redis
@@ -207,8 +207,8 @@ docker compose up -d storage-service         # 启动服务
 
 | 端口 | 协议 | 用途 |
 |---|---|---|
-| 9000 | gRPC | 主 RPC 入口 |
-| 8080 | HTTP | grpc-gateway（REST/JSON） |
+| 19093 | gRPC | 主 RPC 入口 |
+| 18083 | HTTP | grpc-gateway（REST/JSON） |
 
 ## API
 
@@ -224,7 +224,7 @@ gRPC service：`storagev1.StorageService`，proto 定义见 [`api/proto/storage/
 | 管理 | `AdminListFiles`、`AdminGetFile`、`AdminDeleteFile`、`AdminGetQuota`、`AdminSetQuota`、`AdminGetStats`、`AdminListProviders`、`AdminListBuckets`、`AdminSoftDeleteOwnerFiles`、`AdminDeleteOwner` |
 | 审计 | `ListMyAuditLogs`、`AdminListAuditLogs` |
 
-通过 gateway 访问示例：`http://localhost:8080/v1/files`、`http://localhost:8080/v1/admin/stats`（REST 端点对应 proto 的 `google.api.http` 注解）。
+通过 gateway 访问示例：`http://localhost:18083/v1/files`、`http://localhost:18083/v1/admin/stats`（REST 端点对应 proto 的 `google.api.http` 注解）。
 
 ## 开发
 

@@ -19,6 +19,6 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /bin/server /bin/server
 COPY --from=builder /bin/migrate /bin/migrate
 
-EXPOSE 9000 8080
+EXPOSE 19093 18083
 
 ENTRYPOINT ["/bin/server"]

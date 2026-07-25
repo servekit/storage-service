@@ -35,7 +35,7 @@ storage:
   providers:
     - name: test-provider
       vendor: VENDOR_S3_COMPATIBLE
-      endpoint: http://localhost:9000
+      endpoint: http://localhost:19093
       region: us-east-1
       access_key: minioadmin
       secret_key: minioadmin
@@ -47,7 +47,7 @@ storage:
 third_party:
   gid:
     mode: grpc
-    target: "localhost:9000"
+    target: "localhost:19093"
 
 log:
   level: debug
@@ -153,7 +153,7 @@ storage:
   providers:
     - name: default
       vendor: VENDOR_S3_COMPATIBLE
-      endpoint: http://localhost:9000
+      endpoint: http://localhost:19093
       region: us-east-1
       access_key: test
       secret_key: test
@@ -161,7 +161,7 @@ storage:
 third_party:
   gid:
     mode: grpc
-    target: "localhost:9000"
+    target: "localhost:19093"
 `
 	cfgPath := writeTestConfigFile(t, minimalYAML)
 	t.Setenv("STORAGE_SERVICE_CONFIG", cfgPath)
@@ -172,11 +172,11 @@ third_party:
 	}
 
 	// Verify server defaults.
-	if cfg.Server.GRPCAddr != ":9000" {
-		t.Errorf("Server.GRPCAddr = %q, want default %q", cfg.Server.GRPCAddr, ":9000")
+	if cfg.Server.GRPCAddr != ":19093" {
+		t.Errorf("Server.GRPCAddr = %q, want default %q", cfg.Server.GRPCAddr, ":19093")
 	}
-	if cfg.Server.HTTPAddr != ":8080" {
-		t.Errorf("Server.HTTPAddr = %q, want default %q", cfg.Server.HTTPAddr, ":8080")
+	if cfg.Server.HTTPAddr != ":18083" {
+		t.Errorf("Server.HTTPAddr = %q, want default %q", cfg.Server.HTTPAddr, ":18083")
 	}
 
 	// Verify storage defaults.
@@ -271,7 +271,7 @@ storage:
 third_party:
   gid:
     mode: grpc
-    target: "localhost:9000"
+    target: "localhost:19093"
 `
 	cfgPath := writeTestConfigFile(t, yaml)
 	t.Setenv("STORAGE_SERVICE_CONFIG", cfgPath)
@@ -410,7 +410,7 @@ func TestRoleARN_OptionalButValidatedForAliyun(t *testing.T) {
 			},
 		},
 		ThirdParty: &ThirdPartyConfig{
-			GID: &RemoteServiceConfig[*SnowflakeConfig]{Mode: "grpc", Target: "localhost:9000"},
+			GID: &RemoteServiceConfig[*SnowflakeConfig]{Mode: "grpc", Target: "localhost:19093"},
 		},
 	}
 	assert.NoError(t, cfg.Validate(),
@@ -430,7 +430,7 @@ func validConfig(t *testing.T) *Config {
 			Providers: []*ProviderConfig{{
 				Name:      "p",
 				Vendor:    "VENDOR_S3_COMPATIBLE",
-				Endpoint:  "http://localhost:9000",
+				Endpoint:  "http://localhost:19093",
 				Region:    "us-east-1",
 				AccessKey: "ak",
 				SecretKey: "sk",
@@ -449,7 +449,7 @@ func validConfig(t *testing.T) *Config {
 			},
 		},
 		ThirdParty: &ThirdPartyConfig{
-			GID: &RemoteServiceConfig[*SnowflakeConfig]{Mode: "grpc", Target: "localhost:9000"},
+			GID: &RemoteServiceConfig[*SnowflakeConfig]{Mode: "grpc", Target: "localhost:19093"},
 		},
 	}
 }
@@ -633,7 +633,7 @@ func TestExampleConfigsAreLoadable(t *testing.T) {
 	require.NoError(t, err, "config.example.yaml + .env.example must load and validate")
 
 	// Spot-check that ${VAR} was actually expanded, not left as a literal.
-	assert.Equal(t, ":9000", cfg.Server.GRPCAddr)
+	assert.Equal(t, ":19093", cfg.Server.GRPCAddr)
 	assert.Equal(t, "default", cfg.Storage.DefaultBucket)
 	assert.NotEqual(t, "${STORAGE_UPLOAD_TOKEN_SECRET}", cfg.Storage.UploadTokenSecret,
 		"env expansion must have replaced the placeholder")

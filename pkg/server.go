@@ -51,7 +51,7 @@ func WithServiceOptions(opts ...option.Option) ServerOption {
 // This is acceptable ONLY when the service sits behind a trusted boundary
 // that performs authentication (API gateway, service mesh, sidecar) or when
 // it is linked into a host process as a Go module and the host enforces
-// auth. Exposing :9000 (gRPC) or :8080 (gateway) directly to untrusted
+// auth. Exposing :19093 (gRPC) or :18083 (gateway) directly to untrusted
 // networks lets any caller delete owners, read all files, or change quotas.
 // Add an auth interceptor here before deploying outside a trusted boundary.
 func NewServer(cfg *config.Config, opts ...ServerOption) (*Server, error) {

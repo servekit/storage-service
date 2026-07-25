@@ -46,7 +46,7 @@ type ThirdPartyConfig struct {
 // treat an empty value.
 type RemoteServiceConfig[T any] struct {
 	Mode   string // "module" | "grpc"
-	Target string // gRPC addr, e.g. "localhost:9000"
+	Target string // gRPC addr, e.g. "localhost:19091"
 	Config T      // module-mode config
 }
 
@@ -58,8 +58,8 @@ type SnowflakeConfig struct {
 
 // ServerConfig holds gRPC and HTTP server addresses.
 type ServerConfig struct {
-	GRPCAddr string `default:":9000"`
-	HTTPAddr string `default:":8080"`
+	GRPCAddr string `default:":19093"`
+	HTTPAddr string `default:":18083"`
 }
 
 // StorageConfig holds storage backend settings including providers and their buckets.
