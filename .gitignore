@@ -49,3 +49,5 @@ go.mod.tmp
 
 # Claude Code
 .claude/
+
+docs/superpowers
