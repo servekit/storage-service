@@ -4,6 +4,7 @@ import (
 	"context"
 
 	gidservice "github.com/servekit/gid-service/pkg"
+	gidconfig "github.com/servekit/gid-service/pkg/config"
 
 	"github.com/servekit/storage-service/pkg/config"
 )
@@ -14,7 +15,12 @@ type moduleGID struct {
 
 // NewModule creates a GIDService backed by an in-process snowflake generator.
 func NewModule(cfg *config.SnowflakeConfig) (*moduleGID, error) {
-	svc, err := gidservice.NewModule(cfg.MachineID, cfg.StartTime)
+	svc, err := gidservice.NewModule(&gidconfig.Config{
+		Snowflake: &gidconfig.SnowflakeConfig{
+			MachineID: cfg.MachineID,
+			StartTime: cfg.StartTime,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
