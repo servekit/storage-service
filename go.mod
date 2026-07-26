@@ -18,6 +18,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/huaweicloud/huaweicloud-sdk-go-obs v3.26.3+incompatible
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.202
+	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.20.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/servekit/gid-service v0.0.0-20260725050050-97fd4684b30d
