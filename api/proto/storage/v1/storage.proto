@@ -119,8 +119,25 @@ enum AuditLogTargetType {
   AUDIT_LOG_TARGET_TYPE_OWNER = 3;
 }
 
+// Pong is the health-check response — only public, non-sensitive info.
+message Pong {
+  string service = 1;
+  string version = 2;
+  string git_commit = 3;
+  string git_branch = 4;
+  string build_time = 5;
+  string go_version = 6;
+  string status = 7;
+  int64 now = 8;
+  int64 started_at = 9;
+}
+
 // StorageService provides file storage, upload, download, and management capabilities.
 service StorageService {
+  rpc Ping(google.protobuf.Empty) returns (Pong) {
+    option (google.api.http) = { get: "/ping" };
+  }
+
   // Upload
 
   // GenerateUploadURL returns a pre-signed upload URL or instant upload result.

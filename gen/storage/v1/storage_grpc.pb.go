@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	StorageService_Ping_FullMethodName                      = "/storage.v1.StorageService/Ping"
 	StorageService_GenerateUploadURL_FullMethodName         = "/storage.v1.StorageService/GenerateUploadURL"
 	StorageService_GetSTSCredential_FullMethodName          = "/storage.v1.StorageService/GetSTSCredential"
 	StorageService_BatchGetSTSCredential_FullMethodName     = "/storage.v1.StorageService/BatchGetSTSCredential"
@@ -57,6 +58,7 @@ const (
 //
 // StorageService provides file storage, upload, download, and management capabilities.
 type StorageServiceClient interface {
+	Ping(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Pong, error)
 	// GenerateUploadURL returns a pre-signed upload URL or instant upload result.
 	GenerateUploadURL(ctx context.Context, in *GenerateUploadURLRequest, opts ...grpc.CallOption) (*GenerateUploadURLResponse, error)
 	// GetSTSCredential returns STS temporary credentials for client-side upload.
@@ -137,6 +139,16 @@ type storageServiceClient struct {
 
 func NewStorageServiceClient(cc grpc.ClientConnInterface) StorageServiceClient {
 	return &storageServiceClient{cc}
+}
+
+func (c *storageServiceClient) Ping(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Pong, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Pong)
+	err := c.cc.Invoke(ctx, StorageService_Ping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *storageServiceClient) GenerateUploadURL(ctx context.Context, in *GenerateUploadURLRequest, opts ...grpc.CallOption) (*GenerateUploadURLResponse, error) {
@@ -435,6 +447,7 @@ func (c *storageServiceClient) AddOwnerQuota(ctx context.Context, in *AddOwnerQu
 //
 // StorageService provides file storage, upload, download, and management capabilities.
 type StorageServiceServer interface {
+	Ping(context.Context, *emptypb.Empty) (*Pong, error)
 	// GenerateUploadURL returns a pre-signed upload URL or instant upload result.
 	GenerateUploadURL(context.Context, *GenerateUploadURLRequest) (*GenerateUploadURLResponse, error)
 	// GetSTSCredential returns STS temporary credentials for client-side upload.
@@ -517,6 +530,9 @@ type StorageServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedStorageServiceServer struct{}
 
+func (UnimplementedStorageServiceServer) Ping(context.Context, *emptypb.Empty) (*Pong, error) {
+	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
+}
 func (UnimplementedStorageServiceServer) GenerateUploadURL(context.Context, *GenerateUploadURLRequest) (*GenerateUploadURLResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GenerateUploadURL not implemented")
 }
@@ -623,6 +639,24 @@ func RegisterStorageServiceServer(s grpc.ServiceRegistrar, srv StorageServiceSer
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&StorageService_ServiceDesc, srv)
+}
+
+func _StorageService_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StorageServiceServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StorageService_Ping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StorageServiceServer).Ping(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _StorageService_GenerateUploadURL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1154,6 +1188,10 @@ var StorageService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "storage.v1.StorageService",
 	HandlerType: (*StorageServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Ping",
+			Handler:    _StorageService_Ping_Handler,
+		},
 		{
 			MethodName: "GenerateUploadURL",
 			Handler:    _StorageService_GenerateUploadURL_Handler,

@@ -8,6 +8,11 @@ import (
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 )
 
+// Ping is a health-check RPC.
+func (h *Handler) Ping(ctx context.Context, _ *emptypb.Empty) (*storagev1.Pong, error) {
+	return h.svc.Ping(ctx)
+}
+
 // Upload RPCs
 
 // GenerateUploadURL issues a one-shot upload URL (or STS-credentialled upload
