@@ -6,15 +6,16 @@ import (
 	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/logging"
 
-	"github.com/servekit/storage-service/internal/store/models"
+	pkg "github.com/servekit/storage-service/pkg"
 	"github.com/servekit/storage-service/pkg/config"
-
-	"gorm.io/gorm"
 )
 
-// runMigrate loads config and applies the current schema via GORM AutoMigrate.
+// runMigrate loads config and applies the current schema via pkg.Migrate.
 // Operators (or CI) run this before bringing up the server, e.g.
 // `docker run <image> migrate` or `./storage-service migrate`.
+//
+// pkg.Migrate is the same entry point embedders call on an injected db, so
+// standalone and in-process module deployments create tables identically.
 func runMigrate() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -27,20 +28,8 @@ func runMigrate() error {
 		return fmt.Errorf("init database: %w", err)
 	}
 
-	if err := runMigration(db); err != nil {
+	if err := pkg.Migrate(db); err != nil {
 		return err
-	}
-	return nil
-}
-
-// runMigration applies the current schema via GORM AutoMigrate.
-//
-// AutoMigrate creates missing tables/columns/indexes but never drops unused
-// ones — when a column is removed from a model, dev DBs are recreated via
-// testcontainer rather than migrated in place.
-func runMigration(db *gorm.DB) error {
-	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
-		return fmt.Errorf("auto-migrate: %w", err)
 	}
 	return nil
 }
