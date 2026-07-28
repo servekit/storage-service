@@ -9,6 +9,7 @@ import (
 
 	"github.com/servekit/storage-service/internal/jobs"
 	"github.com/servekit/storage-service/internal/provider/storage"
+	"github.com/servekit/storage-service/internal/version"
 	"github.com/servekit/storage-service/internal/service/admin"
 	"github.com/servekit/storage-service/internal/service/audit"
 	"github.com/servekit/storage-service/internal/service/file"
@@ -46,6 +47,9 @@ type StorageService struct {
 	file   *file.Service
 	admin  *admin.Service
 	upload *upload.Service
+
+	// startedAt is set once in New; Ping returns it for uptime.
+	startedAt int64
 }
 
 // Compile-time assertions that *StorageService satisfies its interface
@@ -138,6 +142,7 @@ func New(cfg *config.Config, opts ...option.Option) (*StorageService, error) {
 		file:     fileSvc,
 		admin:    adminSvc,
 		manager:  mgr,
+		startedAt: time.Now().UnixMilli(),
 	}
 
 	// Upload subpackage: holds its own sts (built from the registry inside
@@ -179,6 +184,22 @@ func (s *StorageService) Start() error {
 // slog.Warn inside each StopFunc; cleanup is best-effort.
 func (s *StorageService) Stop() error {
 	return s.manager.Stop()
+}
+
+// Ping is a health-check RPC. Returns only public, non-sensitive info.
+func (s *StorageService) Ping(ctx context.Context) (*storagev1.Pong, error) {
+	v := version.Get()
+	return &storagev1.Pong{
+		Service:   "storage-service",
+		Version:   v.Version,
+		GitCommit: v.GitCommit,
+		GitBranch: v.GitBranch,
+		BuildTime: v.BuildTime,
+		GoVersion: v.GoVersion,
+		Status:    "SERVING",
+		Now:       time.Now().UnixMilli(),
+		StartedAt: s.startedAt,
+	}, nil
 }
 
 // --- upload.Host bridge ---
