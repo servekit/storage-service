@@ -1,0 +1,2875 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "storage/v1/storage.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "StorageService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/ping": {
+      "get": {
+        "operationId": "Ping",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Pong"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/audit-logs": {
+      "get": {
+        "summary": "AdminListAuditLogs lists all audit logs (admin only).",
+        "operationId": "AdminListAuditLogs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminListAuditLogsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "AUDIT_ACTION_UNSPECIFIED",
+              "AUDIT_ACTION_UPLOAD",
+              "AUDIT_ACTION_UPDATE",
+              "AUDIT_ACTION_DELETE",
+              "AUDIT_ACTION_BATCH_DELETE",
+              "AUDIT_ACTION_ADMIN_DELETE",
+              "AUDIT_ACTION_ADMIN_SET_QUOTA",
+              "AUDIT_ACTION_ADMIN_SOFT_DELETE_OWNER",
+              "AUDIT_ACTION_ADMIN_DELETE_OWNER",
+              "AUDIT_ACTION_SET_OWNER_QUOTA",
+              "AUDIT_ACTION_ADD_OWNER_QUOTA",
+              "AUDIT_ACTION_UPLOAD_SESSION_CREATE",
+              "AUDIT_ACTION_UPLOAD_SESSION_CONFIRM",
+              "AUDIT_ACTION_UPLOAD_SESSION_CANCEL",
+              "AUDIT_ACTION_UPLOAD_SESSION_GC"
+            ],
+            "default": "AUDIT_ACTION_UNSPECIFIED"
+          },
+          {
+            "name": "targetType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "AUDIT_LOG_TARGET_TYPE_UNSPECIFIED",
+              "AUDIT_LOG_TARGET_TYPE_FILE",
+              "AUDIT_LOG_TARGET_TYPE_QUOTA",
+              "AUDIT_LOG_TARGET_TYPE_OWNER"
+            ],
+            "default": "AUDIT_LOG_TARGET_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "AUDIT_LOG_STATUS_UNSPECIFIED",
+              "AUDIT_LOG_STATUS_SUCCESS",
+              "AUDIT_LOG_STATUS_FAILED"
+            ],
+            "default": "AUDIT_LOG_STATUS_UNSPECIFIED"
+          },
+          {
+            "name": "requestId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "targetId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/buckets": {
+      "get": {
+        "summary": "AdminListBuckets lists all buckets (admin only).",
+        "operationId": "AdminListBuckets",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminListBucketsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/files": {
+      "get": {
+        "summary": "AdminListFiles lists all files (admin only).",
+        "operationId": "AdminListFiles",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminListFilesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "pathPrefix",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "extension",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "contentTypePrefix",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "orderBy",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SORT_FIELD_UNSPECIFIED",
+              "SORT_FIELD_CREATED_AT",
+              "SORT_FIELD_FILENAME",
+              "SORT_FIELD_SIZE"
+            ],
+            "default": "SORT_FIELD_UNSPECIFIED"
+          },
+          {
+            "name": "descending",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/files/{fileId}": {
+      "get": {
+        "summary": "AdminGetFile returns file details (admin only).",
+        "operationId": "AdminGetFile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminFileInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      },
+      "delete": {
+        "summary": "AdminDeleteFile deletes a file (admin only).",
+        "operationId": "AdminDeleteFile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "requestId",
+            "description": "request_id is optional. If set, recorded in audit logs for traceability.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/owners/{ownerType}/{ownerId}": {
+      "delete": {
+        "summary": "AdminDeleteOwner soft-deletes all files and quota for an owner (admin only).",
+        "operationId": "AdminDeleteOwner",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminDeleteOwnerResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ]
+          },
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "requestId",
+            "description": "request_id is optional. If set, recorded in audit logs for traceability.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/owners/{ownerType}/{ownerId}/quota": {
+      "get": {
+        "summary": "AdminGetQuota returns a user's quota (admin only).",
+        "operationId": "AdminGetQuota",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QuotaInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ]
+          },
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      },
+      "put": {
+        "summary": "AdminSetQuota sets a user's quota (admin only).",
+        "operationId": "AdminSetQuota",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QuotaInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ]
+          },
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceAdminSetQuotaBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/owners/{ownerType}/{ownerId}:softDeleteFiles": {
+      "post": {
+        "summary": "AdminSoftDeleteOwnerFiles soft-deletes all files for an owner (admin only).",
+        "operationId": "AdminSoftDeleteOwnerFiles",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminSoftDeleteOwnerFilesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ]
+          },
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceAdminSoftDeleteOwnerFilesBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/providers": {
+      "get": {
+        "summary": "AdminListProviders lists all storage providers (admin only).",
+        "operationId": "AdminListProviders",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminListProvidersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/admin/stats": {
+      "get": {
+        "summary": "AdminGetStats returns storage statistics (admin only).",
+        "operationId": "AdminGetStats",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AdminGetStatsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "description": "filter by owner type (0 = all)",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "ownerId",
+            "description": "filter by owner (0 = all)",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/audit-logs": {
+      "get": {
+        "summary": "ListMyAuditLogs lists audit logs for the calling user.",
+        "operationId": "ListMyAuditLogs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListMyAuditLogsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "AUDIT_ACTION_UNSPECIFIED",
+              "AUDIT_ACTION_UPLOAD",
+              "AUDIT_ACTION_UPDATE",
+              "AUDIT_ACTION_DELETE",
+              "AUDIT_ACTION_BATCH_DELETE",
+              "AUDIT_ACTION_ADMIN_DELETE",
+              "AUDIT_ACTION_ADMIN_SET_QUOTA",
+              "AUDIT_ACTION_ADMIN_SOFT_DELETE_OWNER",
+              "AUDIT_ACTION_ADMIN_DELETE_OWNER",
+              "AUDIT_ACTION_SET_OWNER_QUOTA",
+              "AUDIT_ACTION_ADD_OWNER_QUOTA",
+              "AUDIT_ACTION_UPLOAD_SESSION_CREATE",
+              "AUDIT_ACTION_UPLOAD_SESSION_CONFIRM",
+              "AUDIT_ACTION_UPLOAD_SESSION_CANCEL",
+              "AUDIT_ACTION_UPLOAD_SESSION_GC"
+            ],
+            "default": "AUDIT_ACTION_UNSPECIFIED"
+          },
+          {
+            "name": "targetType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "AUDIT_LOG_TARGET_TYPE_UNSPECIFIED",
+              "AUDIT_LOG_TARGET_TYPE_FILE",
+              "AUDIT_LOG_TARGET_TYPE_QUOTA",
+              "AUDIT_LOG_TARGET_TYPE_OWNER"
+            ],
+            "default": "AUDIT_LOG_TARGET_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "owner.ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "owner.ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/files": {
+      "get": {
+        "summary": "ListMyFiles lists files owned by the calling user.",
+        "operationId": "ListMyFiles",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListMyFilesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pathPrefix",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "extension",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "contentTypePrefix",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "orderBy",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SORT_FIELD_UNSPECIFIED",
+              "SORT_FIELD_CREATED_AT",
+              "SORT_FIELD_FILENAME",
+              "SORT_FIELD_SIZE"
+            ],
+            "default": "SORT_FIELD_UNSPECIFIED"
+          },
+          {
+            "name": "descending",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "owner.ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "owner.ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/files/{fileId}": {
+      "get": {
+        "summary": "GetMyFile returns details of a file owned by the calling user.",
+        "operationId": "GetMyFile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UserFileInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "owner.ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "owner.ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteMyFile soft-deletes a user's file.",
+        "operationId": "DeleteMyFile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "owner.ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "owner.ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "requestId",
+            "description": "request_id is optional. If set, recorded in audit logs for traceability.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      },
+      "patch": {
+        "summary": "UpdateMyFile updates metadata of a user's file.",
+        "operationId": "UpdateMyFile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UserFileInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceUpdateMyFileBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/files/{fileId}:generateCdnUrl": {
+      "post": {
+        "summary": "GenerateCDNURL returns a CDN-fronted signed URL (with expiry) for an\nalready-uploaded file. Caller must own the file. If ops is non-empty,\nthe URL carries image-processing parameters (Aliyun x-oss-process);\nS3/CloudFront providers reject ops with CDN_IMAGE_PROCESSING_UNSUPPORTED.",
+        "operationId": "GenerateCDNURL",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GenerateCDNURLResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "description": "file_id is the already-uploaded file to generate a CDN URL for.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceGenerateCDNURLBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/files/{fileId}:generateDownloadUrl": {
+      "post": {
+        "summary": "GenerateDownloadURL returns a pre-signed download URL.",
+        "operationId": "GenerateDownloadURL",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GenerateDownloadURLResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceGenerateDownloadURLBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/files/{fileId}:generateProcessUrl": {
+      "post": {
+        "summary": "GenerateProcessURL returns a URL with image processing parameters.",
+        "operationId": "GenerateProcessURL",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GenerateProcessURLResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceGenerateProcessURLBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/files:batchDelete": {
+      "post": {
+        "summary": "BatchDeleteMyFiles soft-deletes multiple user files.",
+        "operationId": "BatchDeleteMyFiles",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BatchDeleteMyFilesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BatchDeleteMyFilesRequest"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/files:page": {
+      "get": {
+        "summary": "ListMyFilesPaged lists files owned by the calling user with traditional\noffset pagination. Use this when the caller needs total_count and page\nnumbers (UI list views with page navigation). For stable iteration under\nconcurrent writes (background scans, exports), use ListMyFiles instead.",
+        "operationId": "ListMyFilesPaged",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListMyFilesPagedResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "description": "1-based page number",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pathPrefix",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "extension",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "contentTypePrefix",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "orderBy",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SORT_FIELD_UNSPECIFIED",
+              "SORT_FIELD_CREATED_AT",
+              "SORT_FIELD_FILENAME",
+              "SORT_FIELD_SIZE"
+            ],
+            "default": "SORT_FIELD_UNSPECIFIED"
+          },
+          {
+            "name": "descending",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "owner.ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "owner.ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/owners/{ownerType}/{ownerId}/quota": {
+      "put": {
+        "summary": "SetOwnerQuota overwrites an owner's total quota. Business-facing (e.g.\npay-service resetting quota after a plan change). For admin tools use\nAdminSetQuota.",
+        "operationId": "SetOwnerQuota",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QuotaInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ]
+          },
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceSetOwnerQuotaBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/owners/{ownerType}/{ownerId}/quota:add": {
+      "post": {
+        "summary": "AddOwnerQuota atomically increments an owner's quota by delta_bytes\n(positive for purchase, negative for refund). Caller is responsible for\nidempotency (e.g. deduplicate by order ID upstream).",
+        "operationId": "AddOwnerQuota",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QuotaInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ownerType",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ]
+          },
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceAddOwnerQuotaBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/quota": {
+      "get": {
+        "summary": "GetMyQuota returns the calling user's storage quota.",
+        "operationId": "GetMyQuota",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QuotaInfo"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "owner.ownerType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "OWNER_TYPE_UNSPECIFIED",
+              "OWNER_TYPE_USER",
+              "OWNER_TYPE_SYSTEM",
+              "OWNER_TYPE_GROUP",
+              "OWNER_TYPE_BUSINESS",
+              "OWNER_TYPE_SERVICE"
+            ],
+            "default": "OWNER_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "owner.ownerId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/sts": {
+      "post": {
+        "summary": "GetSTSCredential returns STS temporary credentials for client-side upload.",
+        "operationId": "GetSTSCredential",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetSTSCredentialResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GetSTSCredentialRequest"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/sts:batch": {
+      "post": {
+        "summary": "BatchGetSTSCredential returns shared STS credentials plus per-file upload\ntokens / instant results for a batch of files. The shared STS credential\nis fetched once and reused across all files in the batch.",
+        "operationId": "BatchGetSTSCredential",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BatchGetSTSCredentialResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BatchGetSTSCredentialRequest"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "summary": "GenerateUploadURL returns a pre-signed upload URL or instant upload result.",
+        "operationId": "GenerateUploadURL",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GenerateUploadURLResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GenerateUploadURLRequest"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/uploads:cancel": {
+      "post": {
+        "summary": "CancelUpload cancels a pending upload session. Best-effort: only succeeds\nwhen the session is still PENDING. The OSS object is NOT deleted (the\nclient may still be uploading); GC reclaims orphaned objects later.",
+        "operationId": "CancelUpload",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CancelUploadRequest"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
+    "/v1/uploads:confirm": {
+      "post": {
+        "summary": "ConfirmUpload confirms a file upload and creates the file record.",
+        "operationId": "ConfirmUpload",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConfirmUploadResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ConfirmUploadRequest"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "StorageServiceAddOwnerQuotaBody": {
+      "type": "object",
+      "properties": {
+        "deltaBytes": {
+          "type": "string",
+          "format": "int64",
+          "description": "delta_bytes may be negative (refund) or positive (purchase)."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "StorageServiceAdminSetQuotaBody": {
+      "type": "object",
+      "properties": {
+        "totalBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "StorageServiceAdminSoftDeleteOwnerFilesBody": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "StorageServiceGenerateCDNURLBody": {
+      "type": "object",
+      "properties": {
+        "ops": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ImageProcessOp"
+          },
+          "description": "ops is optional. Empty = plain download URL; non-empty = image\nprocessing URL (only supported by providers whose CDN+origin combo\ncan process images, currently Aliyun OSS+CDN).\nNOTE: no min_items validation — empty ops = plain download."
+        },
+        "ttl": {
+          "type": "string",
+          "description": "ttl is optional. If unset, defaults to storage.cdn.default_ttl.\nClamped to [min_ttl, max_ttl]. Ignored when public=true."
+        },
+        "public": {
+          "type": "boolean",
+          "description": "public requests an unsigned CDN URL for public resources (avatars,\nthumbnails). The URL has no auth_key/Signature query params and is\npermanent (no expiry). Requires file.is_public=true; otherwise\nBAD_REQUEST. CDN console must be configured to allow anonymous access\nfor these paths (path whitelist or public bucket ACL)."
+        },
+        "filename": {
+          "type": "string",
+          "description": "filename, when set, adds response-content-disposition=attachment to the\nURL query so browsers download (rather than inline-display) the resource\nunder this filename. CDN-side requirements apply — see\nCDNURLOptions.Filename doc for the per-vendor deployment checklist."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string"
+        }
+      }
+    },
+    "StorageServiceGenerateDownloadURLBody": {
+      "type": "object",
+      "properties": {
+        "ttlSeconds": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "filename": {
+          "type": "string",
+          "description": "filename, when set, overrides the response-content-disposition filename\nbrowsers save the download as. Empty falls back to the file's stored\nFilename (uf.Filename). Use this when the caller wants to download under\na different name than the one stored on the file record."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        }
+      }
+    },
+    "StorageServiceGenerateProcessURLBody": {
+      "type": "object",
+      "properties": {
+        "ops": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ImageProcessOp"
+          }
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        }
+      }
+    },
+    "StorageServiceSetOwnerQuotaBody": {
+      "type": "object",
+      "properties": {
+        "totalBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "StorageServiceUpdateMyFileBody": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "clearMetadata": {
+          "type": "boolean",
+          "description": "clear_metadata explicitly clears the existing metadata map. Without this\nflag, proto3 cannot distinguish \"leave metadata unchanged\" from \"set\nmetadata to empty\" because map fields default to an empty map."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "protobufNullValue": {
+      "type": "string",
+      "enum": [
+        "NULL_VALUE"
+      ],
+      "default": "NULL_VALUE",
+      "description": "`NullValue` is a singleton enumeration to represent the null value for the\n`Value` type union.\n\nThe JSON representation for `NullValue` is JSON `null`.\n\n - NULL_VALUE: Null value."
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1AdminDeleteOwnerResponse": {
+      "type": "object",
+      "properties": {
+        "filesDeleted": {
+          "type": "string",
+          "format": "int64"
+        },
+        "bytesReleased": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1AdminFileInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "ownerType": {
+          "$ref": "#/definitions/v1OwnerType"
+        },
+        "ownerId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "isPublic": {
+          "type": "boolean"
+        },
+        "objectId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "size": {
+          "type": "string",
+          "format": "int64"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "extension": {
+          "type": "string"
+        },
+        "md5": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "objectKey": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AdminGetStatsResponse": {
+      "type": "object",
+      "properties": {
+        "totalObjects": {
+          "type": "string",
+          "format": "int64",
+          "title": "deduped physical files"
+        },
+        "totalFiles": {
+          "type": "string",
+          "format": "int64",
+          "title": "file references"
+        },
+        "physicalBytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "actual cloud storage used (deduped)"
+        },
+        "logicalBytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "sum of used_bytes (user quota only)"
+        },
+        "ownerStats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1OwnerStats"
+          }
+        },
+        "providerStats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ProviderStats"
+          }
+        },
+        "bucketStats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1BucketStats"
+          }
+        }
+      }
+    },
+    "v1AdminListAuditLogsResponse": {
+      "type": "object",
+      "properties": {
+        "logs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AuditLogEntry"
+          }
+        },
+        "totalCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AdminListBucketsResponse": {
+      "type": "object",
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1BucketInfo"
+          }
+        }
+      }
+    },
+    "v1AdminListFilesResponse": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AdminFileInfo"
+          }
+        },
+        "totalCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AdminListProvidersResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ProviderInfo"
+          }
+        }
+      }
+    },
+    "v1AdminSoftDeleteOwnerFilesResponse": {
+      "type": "object",
+      "properties": {
+        "filesDeleted": {
+          "type": "string",
+          "format": "int64"
+        },
+        "bytesReleased": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1AuditAction": {
+      "type": "string",
+      "enum": [
+        "AUDIT_ACTION_UNSPECIFIED",
+        "AUDIT_ACTION_UPLOAD",
+        "AUDIT_ACTION_UPDATE",
+        "AUDIT_ACTION_DELETE",
+        "AUDIT_ACTION_BATCH_DELETE",
+        "AUDIT_ACTION_ADMIN_DELETE",
+        "AUDIT_ACTION_ADMIN_SET_QUOTA",
+        "AUDIT_ACTION_ADMIN_SOFT_DELETE_OWNER",
+        "AUDIT_ACTION_ADMIN_DELETE_OWNER",
+        "AUDIT_ACTION_SET_OWNER_QUOTA",
+        "AUDIT_ACTION_ADD_OWNER_QUOTA",
+        "AUDIT_ACTION_UPLOAD_SESSION_CREATE",
+        "AUDIT_ACTION_UPLOAD_SESSION_CONFIRM",
+        "AUDIT_ACTION_UPLOAD_SESSION_CANCEL",
+        "AUDIT_ACTION_UPLOAD_SESSION_GC"
+      ],
+      "default": "AUDIT_ACTION_UNSPECIFIED",
+      "description": "AuditAction represents types of auditable operations."
+    },
+    "v1AuditLogEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "action": {
+          "$ref": "#/definitions/v1AuditAction"
+        },
+        "ownerType": {
+          "$ref": "#/definitions/v1OwnerType"
+        },
+        "ownerId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "targetType": {
+          "$ref": "#/definitions/v1AuditLogTargetType"
+        },
+        "targetId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "before": {
+          "type": "object"
+        },
+        "after": {
+          "type": "object"
+        },
+        "status": {
+          "$ref": "#/definitions/v1AuditLogStatus"
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AuditLogStatus": {
+      "type": "string",
+      "enum": [
+        "AUDIT_LOG_STATUS_UNSPECIFIED",
+        "AUDIT_LOG_STATUS_SUCCESS",
+        "AUDIT_LOG_STATUS_FAILED"
+      ],
+      "default": "AUDIT_LOG_STATUS_UNSPECIFIED",
+      "description": "AuditLogStatus represents the result of an audited operation."
+    },
+    "v1AuditLogTargetType": {
+      "type": "string",
+      "enum": [
+        "AUDIT_LOG_TARGET_TYPE_UNSPECIFIED",
+        "AUDIT_LOG_TARGET_TYPE_FILE",
+        "AUDIT_LOG_TARGET_TYPE_QUOTA",
+        "AUDIT_LOG_TARGET_TYPE_OWNER"
+      ],
+      "default": "AUDIT_LOG_TARGET_TYPE_UNSPECIFIED",
+      "description": "AuditLogTargetType represents the kind of resource an audited operation touched."
+    },
+    "v1BatchDeleteMyFilesRequest": {
+      "type": "object",
+      "properties": {
+        "fileIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "v1BatchDeleteMyFilesResponse": {
+      "type": "object",
+      "properties": {
+        "deletedCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "int64"
+          }
+        }
+      }
+    },
+    "v1BatchGetSTSCredentialRequest": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UploadFileMeta"
+          }
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "ttl": {
+          "type": "string"
+        },
+        "allowedExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "allowed_extensions is batch-level (the whole batch shares one STS\ncredential); per-file restrictions would require one AssumeRole call per\nfile, defeating batch's round-trip savings."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1BatchGetSTSCredentialResponse": {
+      "type": "object",
+      "properties": {
+        "accessKey": {
+          "type": "string",
+          "description": "Shared STS credential for the whole batch. All per-file uploads use the\nsame temporary credential; the client differentiates by upload_token."
+        },
+        "secretKey": {
+          "type": "string"
+        },
+        "securityToken": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UploadCredentialItem"
+          },
+          "description": "items are ordered to match request.files."
+        }
+      }
+    },
+    "v1BucketACL": {
+      "type": "string",
+      "enum": [
+        "BUCKET_ACL_UNSPECIFIED",
+        "BUCKET_ACL_PRIVATE",
+        "BUCKET_ACL_PUBLIC_READ",
+        "BUCKET_ACL_PUBLIC_READ_WRITE"
+      ],
+      "default": "BUCKET_ACL_UNSPECIFIED",
+      "description": "BucketACL represents bucket access control levels."
+    },
+    "v1BucketInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "keyPrefix": {
+          "type": "string"
+        },
+        "acl": {
+          "$ref": "#/definitions/v1BucketACL"
+        },
+        "vendor": {
+          "$ref": "#/definitions/v1Vendor"
+        }
+      }
+    },
+    "v1BucketStats": {
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "type": "string"
+        },
+        "objectCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fileCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1CancelUploadRequest": {
+      "type": "object",
+      "properties": {
+        "uploadToken": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ConfirmUploadRequest": {
+      "type": "object",
+      "properties": {
+        "uploadToken": {
+          "type": "string",
+          "description": "upload_token is the signed token returned by GenerateUploadURL or\nGetSTSCredential. The service verifies its HMAC signature, expiration,\nowner, and vendor before finalizing the upload."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "v1ConfirmUploadResponse": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fileInfo": {
+          "$ref": "#/definitions/v1UserFileInfo"
+        }
+      }
+    },
+    "v1GenerateCDNURLResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "url is the signed CDN URL. Expires at the time indicated by expires_at."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64",
+          "description": "expires_at is the Unix timestamp at which the URL signature becomes\ninvalid. After this time the CDN returns 403."
+        }
+      }
+    },
+    "v1GenerateDownloadURLResponse": {
+      "type": "object",
+      "properties": {
+        "downloadUrl": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1GenerateProcessURLResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1GenerateUploadURLRequest": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string",
+          "format": "int64"
+        },
+        "md5": {
+          "type": "string"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "vendor": {
+          "$ref": "#/definitions/v1Vendor",
+          "description": "vendor is optional. If set (non-UNSPECIFIED), the service validates that\nthe resolved bucket belongs to this vendor; mismatch returns\nBUCKET_VENDOR_MISMATCH. Leave UNSPECIFIED to skip the check (legacy behavior)."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "v1GenerateUploadURLResponse": {
+      "type": "object",
+      "properties": {
+        "instant": {
+          "type": "boolean"
+        },
+        "fileId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fileInfo": {
+          "$ref": "#/definitions/v1UserFileInfo"
+        },
+        "uploadToken": {
+          "type": "string",
+          "description": "upload_token is an HMAC-signed, self-contained token carrying all upload\nmetadata (owner, bucket, vendor, md5, size, etc.). The client must return\nit verbatim to ConfirmUpload. Named \"token\" not \"id\" because it carries\nstate and signature, not just an identifier."
+        },
+        "uploadUrl": {
+          "type": "string"
+        },
+        "objectKey": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1GetSTSCredentialRequest": {
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "type": "string"
+        },
+        "maxSize": {
+          "type": "string",
+          "format": "int64"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "md5": {
+          "type": "string"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "vendor": {
+          "$ref": "#/definitions/v1Vendor",
+          "description": "vendor is optional. Same semantics as GenerateUploadURLRequest.vendor."
+        },
+        "ttl": {
+          "type": "string",
+          "description": "ttl is optional. If unset, uses storage.sts.default_ttl. Capped at storage.sts.max_ttl."
+        },
+        "allowedExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "allowed_extensions restricts which file suffixes the issued STS credential\nmay PUT. Each element must start with '.' (e.g. \".jpg\"). Enforced by OSS\nat PUT time (Resource wildcards in STS policy). Empty = no restriction.\nService normalizes to lowercase; \".JPG\" matches [\".jpg\"]."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string",
+          "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "v1GetSTSCredentialResponse": {
+      "type": "object",
+      "properties": {
+        "instant": {
+          "type": "boolean"
+        },
+        "fileId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fileInfo": {
+          "$ref": "#/definitions/v1UserFileInfo"
+        },
+        "uploadToken": {
+          "type": "string",
+          "description": "upload_token: see GenerateUploadURLResponse.upload_token."
+        },
+        "accessKey": {
+          "type": "string"
+        },
+        "secretKey": {
+          "type": "string"
+        },
+        "securityToken": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "objectKey": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1ImageFormat": {
+      "type": "string",
+      "enum": [
+        "IMAGE_FORMAT_UNSPECIFIED",
+        "IMAGE_FORMAT_JPG",
+        "IMAGE_FORMAT_PNG",
+        "IMAGE_FORMAT_WEBP",
+        "IMAGE_FORMAT_GIF",
+        "IMAGE_FORMAT_BMP",
+        "IMAGE_FORMAT_HEIC",
+        "IMAGE_FORMAT_AVIF"
+      ],
+      "default": "IMAGE_FORMAT_UNSPECIFIED",
+      "description": "ImageFormat represents output image formats."
+    },
+    "v1ImageProcessOp": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/v1ImageProcessOpType"
+        },
+        "width": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "height": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "format": {
+          "$ref": "#/definitions/v1ImageFormat"
+        },
+        "quality": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "resizeMode": {
+          "$ref": "#/definitions/v1ImageResizeMode"
+        },
+        "watermarkText": {
+          "type": "string"
+        },
+        "rotateDegrees": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1ImageProcessOpType": {
+      "type": "string",
+      "enum": [
+        "TYPE_UNSPECIFIED",
+        "TYPE_RESIZE",
+        "TYPE_CROP",
+        "TYPE_QUALITY",
+        "TYPE_FORMAT",
+        "TYPE_WATERMARK",
+        "TYPE_ROTATE"
+      ],
+      "default": "TYPE_UNSPECIFIED"
+    },
+    "v1ImageResizeMode": {
+      "type": "string",
+      "enum": [
+        "IMAGE_RESIZE_MODE_UNSPECIFIED",
+        "IMAGE_RESIZE_MODE_FIT",
+        "IMAGE_RESIZE_MODE_FILL",
+        "IMAGE_RESIZE_MODE_PAD"
+      ],
+      "default": "IMAGE_RESIZE_MODE_UNSPECIFIED",
+      "description": "ImageResizeMode controls how images are resized.\n\n - IMAGE_RESIZE_MODE_FIT: lfit — fit within bounds\n - IMAGE_RESIZE_MODE_FILL: fill — crop to fill\n - IMAGE_RESIZE_MODE_PAD: pad — fit with padding"
+    },
+    "v1ItemError": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListMyAuditLogsResponse": {
+      "type": "object",
+      "properties": {
+        "logs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AuditLogEntry"
+          }
+        },
+        "totalCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListMyFilesPagedResponse": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UserFileInfo"
+          }
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalPages": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ListMyFilesResponse": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UserFileInfo"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Owner": {
+      "type": "object",
+      "properties": {
+        "ownerType": {
+          "$ref": "#/definitions/v1OwnerType"
+        },
+        "ownerId": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "Owner identifies the owner of a resource (user, group, business, etc.)."
+    },
+    "v1OwnerStats": {
+      "type": "object",
+      "properties": {
+        "ownerType": {
+          "$ref": "#/definitions/v1OwnerType"
+        },
+        "fileCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalBytes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1OwnerType": {
+      "type": "string",
+      "enum": [
+        "OWNER_TYPE_UNSPECIFIED",
+        "OWNER_TYPE_USER",
+        "OWNER_TYPE_SYSTEM",
+        "OWNER_TYPE_GROUP",
+        "OWNER_TYPE_BUSINESS",
+        "OWNER_TYPE_SERVICE"
+      ],
+      "default": "OWNER_TYPE_UNSPECIFIED",
+      "description": "OwnerType classifies who owns a file (user, system, group, etc.)."
+    },
+    "v1Pong": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "gitCommit": {
+          "type": "string"
+        },
+        "gitBranch": {
+          "type": "string"
+        },
+        "buildTime": {
+          "type": "string"
+        },
+        "goVersion": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "now": {
+          "type": "string",
+          "format": "int64"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "Pong is the health-check response — only public, non-sensitive info."
+    },
+    "v1ProviderInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "vendor": {
+          "$ref": "#/definitions/v1Vendor"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ProviderStats": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "objectCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalBytes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1QuotaInfo": {
+      "type": "object",
+      "properties": {
+        "totalBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "usedBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "availableBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fileCount": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1SortField": {
+      "type": "string",
+      "enum": [
+        "SORT_FIELD_UNSPECIFIED",
+        "SORT_FIELD_CREATED_AT",
+        "SORT_FIELD_FILENAME",
+        "SORT_FIELD_SIZE"
+      ],
+      "default": "SORT_FIELD_UNSPECIFIED",
+      "description": "SortField controls list ordering."
+    },
+    "v1UploadCredentialItem": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "$ref": "#/definitions/v1UploadTokenInfo"
+        },
+        "error": {
+          "$ref": "#/definitions/v1ItemError"
+        }
+      }
+    },
+    "v1UploadFileMeta": {
+      "type": "object",
+      "properties": {
+        "md5": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string",
+          "format": "int64"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1UploadTokenInfo": {
+      "type": "object",
+      "properties": {
+        "uploadToken": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fileId": {
+          "type": "string",
+          "format": "int64",
+          "description": "file_id is set when MD5 dedup hit (instant). upload_token is empty in that case."
+        },
+        "objectKey": {
+          "type": "string",
+          "description": "object_key is the full OSS object path the client must PUT to (e.g.\n\"\u003ckeyPrefix\u003e/\u003cmd5[:2]\u003e/\u003cmd5\u003e\"). Empty when file_id is set (instant dedup,\nno upload needed). Single-file GetSTSCredential callers read object_key\nfrom the top-level response; batch callers read it from each item."
+        }
+      },
+      "description": "UploadTokenInfo carries either an upload_token (client must ConfirmUpload\nafter the upload) or a file_id when MD5 dedup hit (instant upload)."
+    },
+    "v1UserFileInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "isPublic": {
+          "type": "boolean"
+        },
+        "ownerType": {
+          "$ref": "#/definitions/v1OwnerType"
+        },
+        "size": {
+          "type": "string",
+          "format": "int64"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "extension": {
+          "type": "string"
+        },
+        "md5": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Vendor": {
+      "type": "string",
+      "enum": [
+        "VENDOR_UNSPECIFIED",
+        "VENDOR_ALIYUN_OSS",
+        "VENDOR_AWS_S3",
+        "VENDOR_S3_COMPATIBLE",
+        "VENDOR_TENCENT_COS",
+        "VENDOR_HUAWEI_OBS",
+        "VENDOR_VOLCENGINE_TOS"
+      ],
+      "default": "VENDOR_UNSPECIFIED",
+      "description": "Vendor classifies storage backends (cloud storage providers)."
+    }
+  }
+}

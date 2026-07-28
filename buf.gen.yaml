@@ -22,3 +22,11 @@ plugins:
   - remote: buf.build/grpc-ecosystem/gateway
     out: gen
     opt: paths=source_relative
+  # OpenAPI / Swagger 2.0 docs, derived from the google.api.http annotations.
+  # Output is one <file>.swagger.json per input proto. Consumed by Swagger UI,
+  # Redoc, and frontend/client code generators.
+  - remote: buf.build/grpc-ecosystem/openapiv2
+    out: api/swagger
+    opt:
+      - simple_operation_ids=true  # operationId = "<RpcName>" (concise, no path prefix)
+      - logtostderr=true           # surface generation warnings to stderr

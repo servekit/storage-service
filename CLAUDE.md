@@ -97,6 +97,7 @@ go test -race -coverprofile=coverage.out ./...
 ```
 storage-service/
 ├── api/proto/storage/       # Protobuf 定义
+├── api/swagger/             # buf 生成的 OpenAPI/Swagger 2.0 文档（由 buf.gen.yaml 的 openapiv2 插件产出，供前端/客户端消费）
 ├── cmd/server/              # 启动入口：serve（默认）+ migrate 子命令（单二进制）
 ├── gen/                     # protoc 生成代码
 ├── internal/
