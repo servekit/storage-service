@@ -26,8 +26,8 @@ import (
 	"github.com/servekit/storage-service/internal/service/upload"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
-	"github.com/servekit/storage-service/pkg/thirdcall"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"github.com/stretchr/testify/assert"
@@ -172,7 +172,7 @@ func openOwnedTestDB(t *testing.T) (*gorm.DB, *sql.DB, error) {
 
 // --- GetSTSCredential integration tests ---
 
-// seqGID is a thirdcall.GIDService implementation returning sequential IDs
+// seqGID is a gid_service.GIDService implementation returning sequential IDs
 // without any external dependency. Safe for concurrent use.
 type seqGID struct {
 	counter int64
@@ -181,6 +181,8 @@ type seqGID struct {
 func (g *seqGID) NextID(_ context.Context) (int64, error) {
 	return atomic.AddInt64(&g.counter, 1), nil
 }
+
+func (g *seqGID) Close() error { return nil }
 
 // fakeSTSIssuerRecorder returns a fixed STSCredential and records the policy
 // passed to it so tests can assert on TTL. Mirrors the type used in
@@ -382,8 +384,8 @@ func TestGetSTSCredential_TTLFromRequest(t *testing.T) {
 	assert.Equal(t, 30*time.Second, policy.TTL)
 }
 
-// Compile-time assertion that *seqGID satisfies thirdcall.GIDService.
-var _ thirdcall.GIDService = (*seqGID)(nil)
+// Compile-time assertion that *seqGID satisfies gid_service.GIDService.
+var _ gid_service.GIDService = (*seqGID)(nil)
 
 func TestBatchGetSTSCredential_AllSucceed(t *testing.T) {
 	svc := setupServiceWithFakeProvider(t)

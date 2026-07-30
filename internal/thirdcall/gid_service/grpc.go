@@ -12,8 +12,8 @@ type grpcGID struct {
 	client *gidservice.Client
 }
 
-// NewGRPC creates a GIDService backed by a gRPC connection to gid-service.
-func NewGRPC(target string) (*grpcGID, error) {
+// NewGRPC dials gid-service at target and returns a GIDService over gRPC.
+func NewGRPC(target string) (GIDService, error) {
 	client, err := gidservice.NewClient(target)
 	if err != nil {
 		return nil, fmt.Errorf("dial gid-service: %w", err)
@@ -29,6 +29,7 @@ func (g *grpcGID) NextID(ctx context.Context) (int64, error) {
 	return resp.Id, nil
 }
 
+// Close closes the underlying gRPC connection.
 func (g *grpcGID) Close() error {
 	return g.client.Close()
 }

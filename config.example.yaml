@@ -221,9 +221,12 @@ storage:
 third_party:
   gid:
     mode: ${STORAGE_SERVICE_GID_MODE}
+    # config mirrors gid-service's own gidconfig.Config: snowflake settings
+    # nest under `snowflake:` (see gid-service/config.example.yaml).
     config:
-      machine_id: ${STORAGE_SERVICE_GID_MACHINE_ID}
-      start_time: ${STORAGE_SERVICE_GID_START_TIME}
+      snowflake:
+        machine_id: ${STORAGE_SERVICE_GID_MACHINE_ID}
+        start_time: ${STORAGE_SERVICE_GID_START_TIME}
 
 log:
   level: ${STORAGE_SERVICE_LOG_LEVEL}

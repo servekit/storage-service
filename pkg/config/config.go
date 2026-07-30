@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	gidconfig "github.com/servekit/gid-service/pkg/config"
 	"github.com/servekit/go-common/configx"
 	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/logging"
@@ -37,7 +38,7 @@ type Config struct {
 
 // ThirdPartyConfig holds third-party service connection settings.
 type ThirdPartyConfig struct {
-	GID *RemoteServiceConfig[*SnowflakeConfig]
+	GID *RemoteServiceConfig[*gidconfig.Config]
 }
 
 // RemoteServiceConfig holds connection settings for a service that can run
@@ -48,12 +49,6 @@ type RemoteServiceConfig[T any] struct {
 	Mode   string // "module" | "grpc"
 	Target string // gRPC addr, e.g. "localhost:19091"
 	Config T      // module-mode config
-}
-
-// SnowflakeConfig holds snowflake ID generator settings.
-type SnowflakeConfig struct {
-	MachineID int64
-	StartTime time.Time
 }
 
 // ServerConfig holds gRPC and HTTP server addresses.
@@ -351,17 +346,13 @@ func (c *Config) Validate() error {
 	}
 	switch c.ThirdParty.GID.Mode {
 	case "module":
+		// Module mode runs gid-service in-process. A parent that embeds this
+		// service may inject a Handler via option.WithGIDHandler (then Config
+		// is unused); otherwise standalone (cmd/server) builds one from Config.
+		// Snowflake field validation is delegated to gidservice.NewModule
+		// (→ gidconfig.ValidateSnowflake) at build time.
 		if c.ThirdParty.GID.Config == nil {
 			return fmt.Errorf("third_party.gid.config is required for module mode")
-		}
-		if c.ThirdParty.GID.Config.MachineID < 1 {
-			return fmt.Errorf("third_party.gid.config.machine_id is required and must be >= 1")
-		}
-		if c.ThirdParty.GID.Config.StartTime.IsZero() {
-			return fmt.Errorf("third_party.gid.config.start_time is required")
-		}
-		if c.ThirdParty.GID.Config.StartTime.After(time.Now()) {
-			return fmt.Errorf("third_party.gid.config.start_time must not be in the future")
 		}
 	case "grpc":
 		if c.ThirdParty.GID.Target == "" {

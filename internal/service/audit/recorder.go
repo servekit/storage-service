@@ -6,7 +6,7 @@ import (
 
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/store/dal"
-	"github.com/servekit/storage-service/pkg/thirdcall"
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 
 	"gorm.io/gorm"
 )
@@ -53,11 +53,11 @@ type Recorder interface {
 // DBRecorder writes audit events to the database.
 type DBRecorder struct {
 	db  *gorm.DB
-	gid thirdcall.GIDService
+	gid gid_service.GIDService
 }
 
 // NewDBRecorder creates a new DBRecorder.
-func NewDBRecorder(db *gorm.DB, gid thirdcall.GIDService) *DBRecorder {
+func NewDBRecorder(db *gorm.DB, gid gid_service.GIDService) *DBRecorder {
 	return &DBRecorder{db: db, gid: gid}
 }
 

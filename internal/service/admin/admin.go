@@ -24,8 +24,8 @@ import (
 	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
-	"github.com/servekit/storage-service/pkg/thirdcall"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -35,7 +35,7 @@ import (
 // Service holds admin-domain dependencies.
 type Service struct {
 	db       *gorm.DB
-	gid      thirdcall.GIDService
+	gid      gid_service.GIDService
 	registry *storage.Registry
 	audit    audit.Recorder
 	quota    *quota.Service
@@ -45,7 +45,7 @@ type Service struct {
 // Deps is the dependency bundle injected by the parent service.
 type Deps struct {
 	DB       *gorm.DB
-	GID      thirdcall.GIDService
+	GID      gid_service.GIDService
 	Registry *storage.Registry
 	Audit    audit.Recorder
 	Quota    *quota.Service

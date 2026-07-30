@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	gidconfig "github.com/servekit/gid-service/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -410,7 +411,7 @@ func TestRoleARN_OptionalButValidatedForAliyun(t *testing.T) {
 			},
 		},
 		ThirdParty: &ThirdPartyConfig{
-			GID: &RemoteServiceConfig[*SnowflakeConfig]{Mode: "grpc", Target: "localhost:19093"},
+			GID: &RemoteServiceConfig[*gidconfig.Config]{Mode: "grpc", Target: "localhost:19093"},
 		},
 	}
 	assert.NoError(t, cfg.Validate(),
@@ -449,7 +450,7 @@ func validConfig(t *testing.T) *Config {
 			},
 		},
 		ThirdParty: &ThirdPartyConfig{
-			GID: &RemoteServiceConfig[*SnowflakeConfig]{Mode: "grpc", Target: "localhost:19093"},
+			GID: &RemoteServiceConfig[*gidconfig.Config]{Mode: "grpc", Target: "localhost:19093"},
 		},
 	}
 }

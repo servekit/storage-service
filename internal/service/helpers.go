@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"log/slog"
 
+	gidservice "github.com/servekit/gid-service/pkg"
+	gidconfig "github.com/servekit/gid-service/pkg/config"
+
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
-	"github.com/servekit/storage-service/pkg/thirdcall"
+	"github.com/servekit/storage-service/pkg/option"
 
 	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/lifecycle"
@@ -40,25 +44,56 @@ func resolveDB(cfg *config.Config, external *gorm.DB, mgr *lifecycle.Manager) (*
 	return db, nil
 }
 
-// resolveGID returns the GID service to use. If injected, use as-is. Otherwise
-// build from cfg; if the constructed instance exposes Close() error, register
-// a Stopper so the underlying gRPC connection is released on shutdown.
-func resolveGID(cfg *config.Config, external thirdcall.GIDService, mgr *lifecycle.Manager) (thirdcall.GIDService, error) {
-	if external != nil {
-		return external, nil
+// resolveGID returns the GIDService. An injected handler
+// (option.WithGIDHandler, set when a parent embeds this service) takes
+// precedence over everything else and works even when cfg is nil (no
+// ThirdParty.GID configured); the parent owns lifecycle, so no Stopper is
+// registered in that path. Otherwise cfg must be set: grpc mode dials
+// cfg.Target; module mode builds one from cfg.Config (standalone cmd/server).
+// cfg.Config is gid-service's own *gidconfig.Config, so gidservice.NewModule
+// consumes it directly and validates the snowflake fields at build time. grpc
+// and self-built register a Stopper so mgr.Stop closes the grpc client / stops
+// the Handler. The GIDService interface is internal.
+func resolveGID(o *option.Options, cfg *config.RemoteServiceConfig[*gidconfig.Config], mgr *lifecycle.Manager) (gid_service.GIDService, error) {
+	// Injected handler takes precedence (a parent shares its gid Handler),
+	// even if cfg is nil (no ThirdParty.GID configured).
+	if o.GIDHandler != nil {
+		return gid_service.NewModule(o.GIDHandler, false), nil // borrowed; parent owns lifecycle
 	}
-	gid, err := thirdcall.NewGIDService(cfg.ThirdParty.GID)
-	if err != nil {
-		return nil, err
+	if cfg == nil {
+		return nil, fmt.Errorf("third_party.gid: not configured")
 	}
-	if closer, ok := gid.(interface{ Close() error }); ok {
+	switch cfg.Mode {
+	case "grpc":
+		gid, err := gid_service.NewGRPC(cfg.Target)
+		if err != nil {
+			return nil, fmt.Errorf("init gid-service: %w", err)
+		}
 		mgr.AddStopper("gid", lifecycle.StopFunc(func() {
-			if err := closer.Close(); err != nil {
-				slog.Warn("close gid", "error", err)
+			if err := gid.Close(); err != nil {
+				slog.Warn("close gid-service", "error", err)
 			}
 		}))
+		return gid, nil
+	case "module":
+		// o.GIDHandler is nil here (handled above); build from cfg.
+		if cfg.Config == nil {
+			return nil, fmt.Errorf("third_party.gid: module config required when no handler injected")
+		}
+		hdl, err := gidservice.NewModule(cfg.Config)
+		if err != nil {
+			return nil, fmt.Errorf("init gid-service: %w", err)
+		}
+		gid := gid_service.NewModule(hdl, true)
+		mgr.AddStopper("gid", lifecycle.StopFunc(func() {
+			if err := gid.Close(); err != nil {
+				slog.Warn("close gid-service", "error", err)
+			}
+		}))
+		return gid, nil
+	default:
+		return nil, fmt.Errorf("third_party.gid: unknown mode %q", cfg.Mode)
 	}
-	return gid, nil
 }
 
 // resolveRedis returns the Redis client to use. If the caller injected one via
@@ -107,4 +142,14 @@ func rateLimitConfigured(cfg *ratelimit.Config) bool {
 // allocates a non-nil pointer only when the section exists in config).
 func stsConfigured(cfg *config.STSConfig) bool {
 	return cfg != nil
+}
+
+// thirdPartyGID returns cfg.ThirdParty.GID without dereferencing a nil
+// ThirdParty. Kept here (not in service.go) so gidconfig stays out of
+// service.go's import list. resolveGID treats a nil return as "not configured".
+func thirdPartyGID(cfg *config.Config) *config.RemoteServiceConfig[*gidconfig.Config] {
+	if cfg.ThirdParty == nil {
+		return nil
+	}
+	return cfg.ThirdParty.GID
 }

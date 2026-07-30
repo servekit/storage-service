@@ -2,7 +2,7 @@
 package option
 
 import (
-	"github.com/servekit/storage-service/pkg/thirdcall"
+	gidservice "github.com/servekit/gid-service/pkg"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -15,7 +15,7 @@ type Option func(*Options)
 type Options struct {
 	DB         *gorm.DB
 	Redis      *redis.Client
-	GIDService thirdcall.GIDService
+	GIDHandler *gidservice.Handler
 }
 
 // WithDB provides an existing database connection.
@@ -28,10 +28,13 @@ func WithRedis(client *redis.Client) Option {
 	return func(o *Options) { o.Redis = client }
 }
 
-// WithGIDService provides a gid-service instance.
-// If not set, the service creates one from config.ThirdParty.GID.
-func WithGIDService(svc thirdcall.GIDService) Option {
-	return func(o *Options) { o.GIDService = svc }
+// WithGIDHandler injects a raw gid-service Handler. StorageService wraps it
+// internally into its GIDService; callers do not need to know that interface.
+// Required when third_party.gid.mode=module (a parent process embeds this
+// service and owns the Handler). In grpc mode the service dials gid-service
+// itself and this option is ignored.
+func WithGIDHandler(h *gidservice.Handler) Option {
+	return func(o *Options) { o.GIDHandler = h }
 }
 
 // Apply evaluates all options and returns the resolved Options.

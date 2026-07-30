@@ -14,7 +14,7 @@ import (
 	"github.com/servekit/storage-service/internal/service/conv"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
-	"github.com/servekit/storage-service/pkg/thirdcall"
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"gorm.io/gorm"
@@ -23,7 +23,7 @@ import (
 // Service holds quota-domain dependencies.
 type Service struct {
 	db                *gorm.DB
-	gid               thirdcall.GIDService
+	gid               gid_service.GIDService
 	audit             audit.Recorder
 	defaultQuotaBytes int64
 }
@@ -31,7 +31,7 @@ type Service struct {
 // Deps is the dependency bundle injected by the parent service.
 type Deps struct {
 	DB                *gorm.DB
-	GID               thirdcall.GIDService
+	GID               gid_service.GIDService
 	Audit             audit.Recorder
 	DefaultQuotaBytes int64
 }

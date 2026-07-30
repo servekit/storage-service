@@ -21,8 +21,8 @@ import (
 	"github.com/servekit/storage-service/internal/service/sts"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
-	"github.com/servekit/storage-service/pkg/thirdcall"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"github.com/servekit/go-common/ratelimit"
@@ -39,7 +39,7 @@ import (
 type Service struct {
 	db       *gorm.DB
 	registry *storage.Registry
-	gid      thirdcall.GIDService
+	gid      gid_service.GIDService
 	cfg      *config.Config
 	limiter  ratelimit.Limiter
 
@@ -94,7 +94,7 @@ type DedupLocker interface {
 type Deps struct {
 	DB        *gorm.DB
 	Registry  *storage.Registry
-	GID       thirdcall.GIDService
+	GID       gid_service.GIDService
 	Cfg       *config.Config
 	Limiter   ratelimit.Limiter
 	Redis     *redis.Client

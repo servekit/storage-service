@@ -12,8 +12,8 @@ import (
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/store/models"
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
-	"github.com/servekit/storage-service/pkg/thirdcall"
 
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -21,7 +21,7 @@ import (
 
 const testSecret = "test-secret-key-12345"
 
-// seqGID is a thirdcall.GIDService returning sequential IDs with no external
+// seqGID is a gid_service.GIDService returning sequential IDs with no external
 // dependency. Mirrors the one in the parent service_test.go.
 type seqGID struct {
 	counter int64
@@ -31,8 +31,10 @@ func (g *seqGID) NextID(_ context.Context) (int64, error) {
 	return atomic.AddInt64(&g.counter, 1), nil
 }
 
-// Compile-time assertion that *seqGID satisfies thirdcall.GIDService.
-var _ thirdcall.GIDService = (*seqGID)(nil)
+func (g *seqGID) Close() error { return nil }
+
+// Compile-time assertion that *seqGID satisfies gid_service.GIDService.
+var _ gid_service.GIDService = (*seqGID)(nil)
 
 // noopHost is a minimal upload.Host used by reap tests that don't assert on quota
 // or audit recording. ReapExpiredSessions never calls CheckQuota/Reserve, and

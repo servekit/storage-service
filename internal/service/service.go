@@ -9,15 +9,15 @@ import (
 
 	"github.com/servekit/storage-service/internal/jobs"
 	"github.com/servekit/storage-service/internal/provider/storage"
-	"github.com/servekit/storage-service/internal/version"
 	"github.com/servekit/storage-service/internal/service/admin"
 	"github.com/servekit/storage-service/internal/service/audit"
 	"github.com/servekit/storage-service/internal/service/file"
 	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/service/upload"
+	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
+	"github.com/servekit/storage-service/internal/version"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/option"
-	"github.com/servekit/storage-service/pkg/thirdcall"
 
 	"github.com/servekit/go-common/cronx"
 	"github.com/servekit/go-common/lifecycle"
@@ -37,7 +37,7 @@ type StorageService struct {
 	db       *gorm.DB
 	redis    *redis.Client
 	registry *storage.Registry
-	gid      thirdcall.GIDService
+	gid      gid_service.GIDService
 	limiter  ratelimit.Limiter
 	cfg      *config.Config
 	manager  *lifecycle.Manager
@@ -71,7 +71,7 @@ func New(cfg *config.Config, opts ...option.Option) (*StorageService, error) {
 		return nil, errors.Join(err, mgr.Stop())
 	}
 
-	gidGen, err := resolveGID(cfg, o.GIDService, mgr)
+	gidGen, err := resolveGID(&o, thirdPartyGID(cfg), mgr)
 	if err != nil {
 		return nil, errors.Join(err, mgr.Stop())
 	}
@@ -131,17 +131,17 @@ func New(cfg *config.Config, opts ...option.Option) (*StorageService, error) {
 	})
 
 	svc := &StorageService{
-		db:       db,
-		redis:    redisClient,
-		registry: registry,
-		gid:      gidGen,
-		limiter:  limiter,
-		cfg:      cfg,
-		audit:    auditSvc,
-		quota:    quotaSvc,
-		file:     fileSvc,
-		admin:    adminSvc,
-		manager:  mgr,
+		db:        db,
+		redis:     redisClient,
+		registry:  registry,
+		gid:       gidGen,
+		limiter:   limiter,
+		cfg:       cfg,
+		audit:     auditSvc,
+		quota:     quotaSvc,
+		file:      fileSvc,
+		admin:     adminSvc,
+		manager:   mgr,
 		startedAt: time.Now().UnixMilli(),
 	}
 
