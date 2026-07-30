@@ -9,9 +9,13 @@ package gid_service
 
 import "context"
 
-// GIDService generates globally unique IDs via gid-service. Close releases the
-// underlying resource (grpc connection, or the in-process Handler) — wired to a
-// lifecycle Stopper by resolveGID when this service owns the backend.
+// GIDService generates globally unique IDs via gid-service.
+//
+// Close releases the backend's resource only in grpc mode, where it drops the
+// connection (resolveGID wires it as a lifecycle stopper). In module mode the
+// in-process Handler is registered with the lifecycle Manager directly —
+// resolveGID calls mgr.Add, which drives its Start/Stop — so the module's
+// Close is a no-op.
 type GIDService interface {
 	NextID(ctx context.Context) (int64, error)
 	Close() error

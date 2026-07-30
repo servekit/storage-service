@@ -47,18 +47,19 @@ func resolveDB(cfg *config.Config, external *gorm.DB, mgr *lifecycle.Manager) (*
 // resolveGID returns the GIDService. An injected handler
 // (option.WithGIDHandler, set when a parent embeds this service) takes
 // precedence over everything else and works even when cfg is nil (no
-// ThirdParty.GID configured); the parent owns lifecycle, so no Stopper is
+// ThirdParty.GID configured); the parent owns lifecycle, so nothing is
 // registered in that path. Otherwise cfg must be set: grpc mode dials
-// cfg.Target; module mode builds one from cfg.Config (standalone cmd/server).
-// cfg.Config is gid-service's own *gidconfig.Config, so gidservice.NewModule
-// consumes it directly and validates the snowflake fields at build time. grpc
-// and self-built register a Stopper so mgr.Stop closes the grpc client / stops
-// the Handler. The GIDService interface is internal.
+// cfg.Target and registers a stopper (the GIDService's Close drops the grpc
+// client); module mode builds one from cfg.Config (standalone cmd/server) and
+// registers the raw Handler with the Manager via mgr.Add (it owns the
+// Handler's Start/Stop). cfg.Config is gid-service's own *gidconfig.Config, so
+// gidservice.NewModule consumes it directly and validates the snowflake fields
+// at build time. The GIDService interface is internal.
 func resolveGID(o *option.Options, cfg *config.RemoteServiceConfig[*gidconfig.Config], mgr *lifecycle.Manager) (gid_service.GIDService, error) {
 	// Injected handler takes precedence (a parent shares its gid Handler),
 	// even if cfg is nil (no ThirdParty.GID configured).
 	if o.GIDHandler != nil {
-		return gid_service.NewModule(o.GIDHandler, false), nil // borrowed; parent owns lifecycle
+		return gid_service.NewModule(o.GIDHandler), nil // borrowed; parent owns lifecycle
 	}
 	if cfg == nil {
 		return nil, fmt.Errorf("third_party.gid: not configured")
@@ -84,12 +85,8 @@ func resolveGID(o *option.Options, cfg *config.RemoteServiceConfig[*gidconfig.Co
 		if err != nil {
 			return nil, fmt.Errorf("init gid-service: %w", err)
 		}
-		gid := gid_service.NewModule(hdl, true)
-		mgr.AddStopper("gid", lifecycle.StopFunc(func() {
-			if err := gid.Close(); err != nil {
-				slog.Warn("close gid-service", "error", err)
-			}
-		}))
+		gid := gid_service.NewModule(hdl)
+		mgr.Add("gid", hdl)
 		return gid, nil
 	default:
 		return nil, fmt.Errorf("third_party.gid: unknown mode %q", cfg.Mode)
