@@ -159,7 +159,8 @@ func AddQuota(ctx context.Context, tx *gorm.DB, ownerType int32, ownerID, delta 
 	return nil
 }
 
-// DeleteQuotaByOwner soft-deletes the quota row for an owner.
+// DeleteQuotaByOwner hard-deletes the quota row for an owner (StorageQuota has
+// no DeletedAt, so this is a physical DELETE).
 func DeleteQuotaByOwner(ctx context.Context, tx *gorm.DB, ownerType int32, ownerID int64) error {
 	_, err := gorm.G[models.StorageQuota](tx).
 		Where(generated.StorageQuota.OwnerType.Eq(ownerType)).

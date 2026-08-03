@@ -10,10 +10,10 @@ import (
 // (vendor, bucket, md5).
 type StorageObject struct {
 	ID           int64  `gorm:"primaryKey" json:"id"`
-	Vendor       int32  `gorm:"column:vendor;type:smallint;not null;uniqueIndex:idx_storage_objects_vendor_bucket_md5,condition:deleted_at IS NULL" json:"vendor"`
-	Bucket       string `gorm:"column:bucket;type:varchar(128);not null;uniqueIndex:idx_storage_objects_vendor_bucket_md5,condition:deleted_at IS NULL;uniqueIndex:idx_storage_objects_bucket_key_active,condition:deleted_at IS NULL" json:"bucket"`
-	ObjectKey    string `gorm:"column:object_key;type:varchar(512);not null;uniqueIndex:idx_storage_objects_bucket_key_active,condition:deleted_at IS NULL" json:"object_key"`
-	MD5          string `gorm:"column:md5;type:varchar(32);not null;uniqueIndex:idx_storage_objects_vendor_bucket_md5,condition:deleted_at IS NULL" json:"md5"`
+	Vendor       int32  `gorm:"column:vendor;type:smallint;not null;index:idx_storage_objects_vendor_bucket_md5" json:"vendor"`
+	Bucket       string `gorm:"column:bucket;type:varchar(128);not null;index:idx_storage_objects_vendor_bucket_md5;index:idx_storage_objects_bucket_key_active" json:"bucket"`
+	ObjectKey    string `gorm:"column:object_key;type:varchar(512);not null;index:idx_storage_objects_bucket_key_active" json:"object_key"`
+	MD5          string `gorm:"column:md5;type:varchar(32);not null;index:idx_storage_objects_vendor_bucket_md5" json:"md5"`
 	Size         int64  `gorm:"column:size;not null" json:"size"`
 	ContentType  string `gorm:"column:content_type;type:varchar(128);not null" json:"content_type"`
 	Extension    string `gorm:"column:extension;type:varchar(16)" json:"extension,omitempty"`

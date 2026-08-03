@@ -12,15 +12,15 @@ import (
 // StorageFile represents a file mapping to a physical storage object.
 type StorageFile struct {
 	ID          int64          `gorm:"primaryKey" json:"id"`
-	OwnerType   int32          `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_files_owner,condition:deleted_at IS NULL" json:"owner_type"`
-	OwnerID     int64          `gorm:"column:owner_id;not null;index:idx_files_owner,condition:deleted_at IS NULL" json:"owner_id"`
+	OwnerType   int32          `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_files_owner" json:"owner_type"`
+	OwnerID     int64          `gorm:"column:owner_id;not null;index:idx_files_owner" json:"owner_id"`
 	ObjectID    int64          `gorm:"column:object_id;not null;index:idx_files_object_id" json:"object_id"`
 	Filename    string         `gorm:"column:filename;type:varchar(256);not null" json:"filename"`
 	FilePath    string         `gorm:"column:file_path;type:varchar(512)" json:"file_path,omitempty"`
 	Description string         `gorm:"column:description;type:text" json:"description,omitempty"`
-	Metadata    MapJSON        `gorm:"column:metadata;type:jsonb" json:"metadata,omitempty"`
+	Metadata    MapJSON        `gorm:"column:metadata;type:json" json:"metadata,omitempty"`
 	IsPublic    bool           `gorm:"column:is_public;not null;default:false" json:"is_public"`
-	DeletedAt   gorm.DeletedAt `gorm:"column:deleted_at;index:idx_files_owner,condition:deleted_at IS NULL;index:idx_files_owner_path,condition:deleted_at IS NULL" json:"deleted_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"column:deleted_at;index:idx_files_owner;index:idx_files_owner_path" json:"deleted_at"`
 	CreatedAt   time.Time      `gorm:"column:created_at;not null;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time      `gorm:"column:updated_at;not null;autoUpdateTime" json:"updated_at"`
 }
@@ -88,14 +88,20 @@ func (m MapJSON) Value() (driver.Value, error) {
 	return jsonx.Marshal(m)
 }
 
-// Scan implements the sql.Scanner interface.
+// Scan implements the sql.Scanner interface. Handles both []byte
+// (postgres/mysql) and string (sqlite/modernc) for cross-dialect portability.
 func (m *MapJSON) Scan(value any) error {
 	if value == nil {
 		*m = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return fmt.Errorf("cannot scan %T into MapJSON", value)
 	}
 	return jsonx.Unmarshal(bytes, m)

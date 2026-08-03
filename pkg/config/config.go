@@ -76,10 +76,11 @@ type StorageConfig struct {
 	CDN                   CDNRuntimeConfig
 }
 
-// UploadSessionConfig configures session TTL and dedup lock behavior.
+// UploadSessionConfig configures session TTL and the shared upload lock
+// (used by session dedup, object dedup, and GC reap — see upload.NewLock).
 type UploadSessionConfig struct {
-	TTL       time.Duration `default:"15m"`
-	DedupLock *LockConfig
+	TTL  time.Duration `default:"15m"`
+	Lock *LockConfig
 }
 
 // CDNRuntimeConfig sits at Storage level (not per-provider) — TTL defaults
@@ -94,7 +95,7 @@ type CDNRuntimeConfig struct {
 
 // LockConfig configures a redisx.Lock instance.
 type LockConfig struct {
-	Prefix string        `default:"upload:dedup"`
+	Prefix string        `default:"upload"`
 	TTL    time.Duration `default:"10s"`
 	Tries  int           `default:"3"`
 	Wait   time.Duration `default:"100ms"`

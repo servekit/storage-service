@@ -36,7 +36,7 @@ func TestReapExpiredSessions_OrphanCleanup(t *testing.T) {
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(-time.Minute), // already expired
 	}
-	_, err := dal.CreateUploadSession(ctx, db, sess)
+	err := dal.CreateUploadSession(ctx, db, sess)
 	require.NoError(t, err)
 
 	// Simulate client having uploaded to OSS (orphan).
@@ -74,7 +74,7 @@ func TestReapExpiredSessions_NoUploadSkipsDelete(t *testing.T) {
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(-time.Minute),
 	}
-	_, err := dal.CreateUploadSession(ctx, db, sess)
+	err := dal.CreateUploadSession(ctx, db, sess)
 	require.NoError(t, err)
 
 	deleted, err := svc.ReapExpiredSessions(ctx)
@@ -112,7 +112,7 @@ func TestReapExpiredSessions_ConfirmedSessionNotDeletedRaceFix(t *testing.T) {
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(-time.Minute),
 	}
-	_, err := dal.CreateUploadSession(ctx, db, sess)
+	err := dal.CreateUploadSession(ctx, db, sess)
 	require.NoError(t, err)
 	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/race",
 		[]byte("data"), "text/plain", "00000000000000000000000000000004")
@@ -159,7 +159,7 @@ func TestReapExpiredSessions_TransientErrorRetries(t *testing.T) {
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(-time.Minute),
 	}
-	_, err := dal.CreateUploadSession(ctx, db, sess)
+	err := dal.CreateUploadSession(ctx, db, sess)
 	require.NoError(t, err)
 
 	// Make HeadObject return a transient error (not ErrObjectNotFound) for
@@ -218,7 +218,7 @@ func TestReapExpiredSessions_HAReplicasDoNotDoubleProcess(t *testing.T) {
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(-time.Minute),
 	}
-	_, err := dal.CreateUploadSession(ctx, db, sess)
+	err := dal.CreateUploadSession(ctx, db, sess)
 	require.NoError(t, err)
 	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/ha-contention",
 		[]byte("data"), "text/plain", "00000000000000000000000000000005")

@@ -16,8 +16,8 @@ type StorageAuditLog struct {
 	OwnerID      int64     `gorm:"column:owner_id;not null;index:idx_audit_logs_owner,sort:desc" json:"owner_id"`
 	TargetType   int32     `gorm:"column:target_type;type:smallint;not null;index:idx_audit_logs_target,sort:desc" json:"target_type"`
 	TargetID     int64     `gorm:"column:target_id;not null;index:idx_audit_logs_target,sort:desc" json:"target_id"`
-	Before       JSONMap   `gorm:"column:before;type:jsonb" json:"before,omitempty"`
-	After        JSONMap   `gorm:"column:after;type:jsonb" json:"after,omitempty"`
+	Before       JSONMap   `gorm:"column:before;type:json" json:"before,omitempty"`
+	After        JSONMap   `gorm:"column:after;type:json" json:"after,omitempty"`
 	Status       int32     `gorm:"column:status;type:smallint;not null" json:"status"`
 	ErrorMessage string    `gorm:"column:error_message;type:text" json:"error_message,omitempty"`
 	RequestID    string    `gorm:"column:request_id;type:varchar(64)" json:"request_id,omitempty"`
@@ -35,14 +35,20 @@ func (m JSONMap) Value() (driver.Value, error) {
 	return jsonx.Marshal(m)
 }
 
-// Scan implements the sql.Scanner interface.
+// Scan implements the sql.Scanner interface. Handles both []byte
+// (postgres/mysql) and string (sqlite/modernc) for cross-dialect portability.
 func (m *JSONMap) Scan(value any) error {
 	if value == nil {
 		*m = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return fmt.Errorf("cannot scan %T into JSONMap", value)
 	}
 	return jsonx.Unmarshal(bytes, m)

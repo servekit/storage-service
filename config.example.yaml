@@ -3,12 +3,16 @@ server:
   http_addr: ${STORAGE_SERVICE_SERVER_HTTP_ADDR}
 
 database:
-  host: ${STORAGE_SERVICE_DB_HOST}
-  port: ${STORAGE_SERVICE_DB_PORT}
-  user: ${STORAGE_SERVICE_DB_USER}
-  password: ${STORAGE_SERVICE_DB_PASSWORD}
-  dbname: ${STORAGE_SERVICE_DB_NAME}
-  sslmode: ${STORAGE_SERVICE_DB_SSLMODE}
+  driver: ${STORAGE_SERVICE_DB_DRIVER}        # postgres | mysql | sqlite(空默认 postgres)
+  # docker-compose 只跑 postgres;切 mysql/sqlite 时本地编辑 config.yaml 对应块
+  postgres:
+    host: ${STORAGE_SERVICE_DB_HOST}
+    port: ${STORAGE_SERVICE_DB_PORT}
+    user: ${STORAGE_SERVICE_DB_USER}
+    password: ${STORAGE_SERVICE_DB_PASSWORD}
+    dbname: ${STORAGE_SERVICE_DB_NAME}
+    sslmode: ${STORAGE_SERVICE_DB_SSLMODE}
+    # schema: ${STORAGE_SERVICE_DB_SCHEMA}    # 可选 search_path
   max_open_conns: ${STORAGE_SERVICE_DB_MAX_OPEN_CONNS}
   max_idle_conns: ${STORAGE_SERVICE_DB_MAX_IDLE_CONNS}
   conn_max_lifetime: ${STORAGE_SERVICE_DB_CONN_MAX_LIFETIME}

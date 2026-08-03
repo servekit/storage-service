@@ -18,7 +18,7 @@ import (
 // all models so the upload_sessions table exists.
 func setupSessionTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestUploadSessionRepo_CreateAndGetByID(t *testing.T) {
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
-	if _, err := CreateUploadSession(ctx, db, s); err != nil {
+	if err := CreateUploadSession(ctx, db, s); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if s.ID == 0 {
@@ -90,7 +90,7 @@ func TestUploadSessionRepo_MarkConfirmed(t *testing.T) {
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
-	if _, err := CreateUploadSession(ctx, db, s); err != nil {
+	if err := CreateUploadSession(ctx, db, s); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestUploadSessionRepo_MarkCancelled(t *testing.T) {
 		Status:    int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	if _, err := CreateUploadSession(ctx, db, s); err != nil {
+	if err := CreateUploadSession(ctx, db, s); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -151,7 +151,7 @@ func TestUploadSessionRepo_FindPendingDedup(t *testing.T) {
 		Status:    int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	if _, err := CreateUploadSession(ctx, db, s); err != nil {
+	if err := CreateUploadSession(ctx, db, s); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -176,10 +176,6 @@ func TestUploadSessionRepo_FindPendingDedup(t *testing.T) {
 	}
 }
 
-// reapAdvisoryLockKey mirrors the constant used by ReapExpiredSessions. Tests
-// need it to exercise the same lock domain the production reap job will acquire.
-const reapAdvisoryLockKey int64 = 0x534F4C47 // "SOLG" — Storage-service Object Lifecycle GC
-
 func TestUploadSessionRepo_ListExpiredPending(t *testing.T) {
 	db := setupSessionTestDB(t)
 	ctx := context.Background()
@@ -191,7 +187,7 @@ func TestUploadSessionRepo_ListExpiredPending(t *testing.T) {
 		Status:    int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt: time.Now().Add(-1 * time.Minute),
 	}
-	if _, err := CreateUploadSession(ctx, db, expired); err != nil {
+	if err := CreateUploadSession(ctx, db, expired); err != nil {
 		t.Fatalf("Create expired: %v", err)
 	}
 	// A still-valid PENDING session.
@@ -201,7 +197,7 @@ func TestUploadSessionRepo_ListExpiredPending(t *testing.T) {
 		Status:    int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	if _, err := CreateUploadSession(ctx, db, active); err != nil {
+	if err := CreateUploadSession(ctx, db, active); err != nil {
 		t.Fatalf("Create active: %v", err)
 	}
 
@@ -238,55 +234,5 @@ func TestUploadSessionRepo_ListExpiredPending(t *testing.T) {
 	}
 	if claimed2 {
 		t.Fatalf("MarkExpired: second CAS on non-PENDING session must return claimed=false")
-	}
-}
-
-// TestUploadSessionRepo_TryAdvisoryLock_HAExclusion verifies that
-// TryAdvisoryLock provides HA cross-replica exclusion: while one replica holds
-// the GC lease, a second replica's attempt must fail without error. After the
-// holder releases, the lock must be re-acquirable. This is the contract that
-// ReapExpiredSessions relies on to keep two cron-driven replicas from racing on the same
-// batch of expired sessions.
-func TestUploadSessionRepo_TryAdvisoryLock_HAExclusion(t *testing.T) {
-	db := setupSessionTestDB(t)
-	ctx := context.Background()
-
-	// Replica A acquires the GC lease.
-	releaseA, acquiredA, err := TryUploadSessionAdvisoryLock(ctx, db, reapAdvisoryLockKey)
-	if err != nil {
-		t.Fatalf("A acquire: %v", err)
-	}
-	if !acquiredA {
-		t.Fatal("A: expected to acquire lease, got acquired=false")
-	}
-
-	// Replica B tries while A still holds — must NOT acquire.
-	releaseB, acquiredB, err := TryUploadSessionAdvisoryLock(ctx, db, reapAdvisoryLockKey)
-	if err != nil {
-		t.Fatalf("B acquire: %v", err)
-	}
-	if acquiredB {
-		t.Fatal("B: expected to fail acquiring while A holds the lease")
-	}
-
-	// releaseB should be safe to call even when no lease was acquired — the
-	// caller in ReapExpiredSessions unconditionally defers it.
-	if relErr := releaseB(); relErr != nil {
-		t.Fatalf("B release: unexpected error on no-op release: %v", relErr)
-	}
-
-	// A releases; the lease must be re-acquirable by C.
-	if relErr := releaseA(); relErr != nil {
-		t.Fatalf("A release: %v", relErr)
-	}
-	releaseC, acquiredC, err := TryUploadSessionAdvisoryLock(ctx, db, reapAdvisoryLockKey)
-	if err != nil {
-		t.Fatalf("C acquire after release: %v", err)
-	}
-	if !acquiredC {
-		t.Fatal("C: expected to acquire lease after A released")
-	}
-	if relErr := releaseC(); relErr != nil {
-		t.Fatalf("C release: %v", relErr)
 	}
 }

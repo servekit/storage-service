@@ -164,7 +164,7 @@ func TestListMyFilesPaged_Validation(t *testing.T) {
 // DB rows: verifies total_count, total_pages, and has_more are computed
 // correctly across pages.
 func TestListMyFilesPaged_SuccessPath(t *testing.T) {
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestListMyFilesPaged_SuccessPath(t *testing.T) {
 func setupFileServiceWithFakeProvider(t *testing.T) (*Service, *fake.FakeProvider) {
 	t.Helper()
 
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}

@@ -43,9 +43,9 @@ type Service struct {
 	cfg      *config.Config
 	limiter  ratelimit.Limiter
 
-	sts       *sts.Service
-	dedupLock DedupLocker
-	host      Host
+	sts  *sts.Service
+	lock *redisx.Lock // shared by all upload lock domains (dedup / object / reap); nil when Redis is unavailable
+	host Host
 }
 
 // Host is the parent-service bridge: upload needs a handful of cross-domain
@@ -80,27 +80,65 @@ type AuditEvent struct {
 	After      map[string]any
 }
 
-// DedupLock prevents thundering-herd concurrent session creation for the same
-// (owner, md5, size). The concrete implementation DedupLock struct (defined
-// below) adapts a redisx.Lock; acquire returns errDedupLockDisabled (or
-// redisx.ErrLockFailed) to signal fall-through, both handled by
-// findOrCreateSession. Defined as an interface so tests can inject a fake.
-type DedupLocker interface {
-	acquire(ctx context.Context, ownerType int32, ownerID int64, md5 string, size int64) (string, error)
-	release(ctx context.Context, ownerType int32, ownerID int64, md5 string, size int64, id string)
+// Lock target domains. All upload locks share one *redisx.Lock instance
+// (Service.lock), distinguished by target key with a single configurable
+// prefix (see NewLock) — there is no per-domain lock struct.
+const (
+	lockTargetDedup  = "dedup"  // session-dedup target suffix: <ownerType>:<ownerID>:<md5>:<size>
+	lockTargetObject = "object" // object-dedup target suffix: <vendor>:<bucket>:<md5>
+	lockTargetReap   = "reap"   // cross-replica GC exclusion target (single key)
+)
+
+// NewLock builds the single *redisx.Lock shared by all upload lock domains
+// (session dedup, object dedup, GC reap). The prefix and TTL/Tries/Wait come
+// from cfg (config.Storage.UploadSession.Lock), so operators customize the
+// Redis key namespace and tuning in one place. Returns nil when Redis is
+// unavailable — callers then run lock-free (dedup best-effort; GC relies on the
+// per-row CAS in MarkUploadSessionExpired for correctness).
+func NewLock(rdb *redis.Client, cfg *config.LockConfig) *redisx.Lock {
+	if rdb == nil {
+		return nil
+	}
+	if cfg == nil {
+		cfg = &config.LockConfig{}
+	}
+	if cfg.Prefix == "" {
+		cfg.Prefix = "upload"
+	}
+	if cfg.TTL <= 0 {
+		cfg.TTL = 10 * time.Second
+	}
+	if cfg.Tries <= 0 {
+		cfg.Tries = 3
+	}
+	if cfg.Wait <= 0 {
+		cfg.Wait = 100 * time.Millisecond
+	}
+	lock, err := redisx.NewLock(rdb, &redisx.LockConfig{
+		Prefix: cfg.Prefix,
+		TTL:    cfg.TTL,
+		Tries:  cfg.Tries,
+		Wait:   cfg.Wait,
+	})
+	if err != nil {
+		// Defensive: NewLock only fails on empty prefix or non-positive TTL,
+		// both handled above. Reaching here is a programmer error.
+		panic(fmt.Sprintf("upload: build lock: %v", err))
+	}
+	return lock
 }
 
 // Deps is the dependency bundle injected by the parent service.
 type Deps struct {
-	DB        *gorm.DB
-	Registry  *storage.Registry
-	GID       gid_service.GIDService
-	Cfg       *config.Config
-	Limiter   ratelimit.Limiter
-	Redis     *redis.Client
-	STS       *config.STSConfig
-	DedupLock DedupLocker
-	Host      Host
+	DB       *gorm.DB
+	Registry *storage.Registry
+	GID      gid_service.GIDService
+	Cfg      *config.Config
+	Limiter  ratelimit.Limiter
+	Redis    *redis.Client
+	STS      *config.STSConfig
+	Lock     *redisx.Lock
+	Host     Host
 }
 
 // fileMeta bundles per-file input for issueUploadCredential. Used by single and batch paths.
@@ -123,22 +161,10 @@ type issueResult struct {
 	expiresAt                                                                     int64
 }
 
-// errDedupLockDisabled — an intentional deployment mode where callers
-// fall through to FindPendingDedup and rely on the DB-level partial unique index.
-type DedupLock struct {
-	lock *redisx.Lock
-}
-
-// errDedupLockDisabled is returned by DedupLock.acquire when Redis
-// is not configured (lock == nil). It is distinct from a Redis outage: "no
-// Redis configured" is an intentional deployment mode where callers fall
-// through to FindPendingDedup and rely on the DB-level partial unique index,
-// whereas a Redis outage (any other non-ErrLockFailed error) fails closed.
-var errDedupLockDisabled = errors.New("upload: dedup lock disabled (no redis)")
-
 // New constructs an upload.Service from injected deps. The STS cache is built
-// internally (it adapts the registry, which is upload-domain state) and the
-// dedup lock is injected so the parent can share its redisx lock config.
+// internally (it adapts the registry, which is upload-domain state); the single
+// shared *redisx.Lock is injected so the parent controls its config (prefix,
+// TTL, retries) in one place.
 func New(d *Deps) *Service {
 	issuer := sts.FuncIssuer(func(ctx context.Context, policy *storage.STSPolicy) (*storage.STSCredential, error) {
 		p, err := d.Registry.ProviderForBucket(policy.Bucket)
@@ -148,14 +174,14 @@ func New(d *Deps) *Service {
 		return p.GetSTSToken(ctx, policy)
 	})
 	return &Service{
-		db:        d.DB,
-		registry:  d.Registry,
-		gid:       d.GID,
-		cfg:       d.Cfg,
-		limiter:   d.Limiter,
-		sts:       sts.New(d.Redis, issuer, d.STS),
-		dedupLock: d.DedupLock,
-		host:      d.Host,
+		db:       d.DB,
+		registry: d.Registry,
+		gid:      d.GID,
+		cfg:      d.Cfg,
+		limiter:  d.Limiter,
+		sts:      sts.New(d.Redis, issuer, d.STS),
+		lock:     d.Lock,
+		host:     d.Host,
 	}
 }
 
@@ -405,6 +431,24 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 	}
 	if obj.ID, err = s.gid.NextID(ctx); err != nil {
 		return nil, xcodes.ErrInternal.Wrapf(err, "generate object id")
+	}
+
+	// Object dedup: serialize concurrent confirms of identical content so
+	// CreateOrGetObject's check-then-insert does not create duplicate object
+	// rows. Best-effort like the session dedup lock — contention falls through
+	// (rare duplicate accepted for DB portability); Redis errors fail closed.
+	if s.lock != nil {
+		target := objectLockTarget(session.Vendor, session.Bucket, session.MD5)
+		lockID, lockErr := s.lock.Acquire(ctx, target)
+		switch {
+		case lockErr == nil:
+			defer func() { _ = s.lock.Release(context.Background(), target, lockID) }()
+		case errors.Is(lockErr, redisx.ErrLockFailed):
+			// Another confirm of the same content is mid-flight; fall through.
+			// CreateOrGetObject may create a duplicate — accepted tradeoff.
+		default:
+			return nil, xcodes.ErrInternal.Wrapf(lockErr, "acquire object dedup lock")
+		}
 	}
 
 	var result *storagev1.ConfirmUploadResponse
@@ -700,38 +744,39 @@ func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ow
 // findOrCreateSession returns an existing PENDING session for the same
 // (owner, md5, size) or creates a new one.
 //
-// Two-layer defense against duplicate PENDING sessions:
+// Dedup is enforced solely by the Redis dedup lock — there is no DB unique
+// constraint on these columns, keeping the schema portable across
+// postgres/mysql/sqlite.
 //
-//  1. Redis dedup lock (best-effort front layer). Three acquire outcomes:
+//  1. Redis dedup lock (s.lock, best-effort). Acquire outcomes:
 //     - success: hold the lock for the rest of this call.
-//     - redisx.ErrLockFailed (lock contention): fall through — the lock
-//     holder will create the session, we'll pick it up via FindPendingDedup.
-//     - errDedupLockDisabled (Redis not configured): fall through —
-//     this is an intentional deployment mode; the DB unique index is the
-//     only backstop.
-//     - any other error (Redis unreachable, network error, ctx cancelled):
-//     fail closed. Surfacing an internal error is safer than risking
-//     duplicate PENDING sessions / quota drift.
+//     - redisx.ErrLockFailed (contention): fall through — the holder will
+//     create the session, we pick it up via FindPendingDedup.
+//     - any other error (Redis unreachable): fail closed.
+//     When s.lock is nil (Redis not configured), dedup is skipped entirely —
+//     an intentional best-effort deployment mode.
 //
-//  2. DB-level partial unique index idx_upload_sessions_pending_dedup on
-//     (owner_type, owner_id, md5, size) scoped to status=PENDING. Even if
-//     both layers above let two callers race to Create, the loser's INSERT
-//     hits ON CONFLICT DO NOTHING (see UploadSessionRepo.Create) and the
-//     caller re-reads via FindPendingDedup.
+// Tradeoff: with no DB-level unique constraint, if Redis is unavailable and
+// two callers race past FindPendingDedup, both may Create a PENDING session
+// (duplicates expire via TTL). Accepted for DB portability — the former
+// partial-unique-index backstop was postgres/sqlite only (mysql has none).
 func (s *Service) findOrCreateSession(ctx context.Context, ownerType int32, ownerID int64, vendor int32, bucket, objectKey string, file fileMeta, ttl time.Duration) (*models.StorageUploadSession, error) {
-	if lockID, lockErr := s.dedupLock.acquire(ctx, ownerType, ownerID, file.md5, file.size); lockErr == nil {
-		defer s.dedupLock.release(ctx, ownerType, ownerID, file.md5, file.size, lockID)
-	} else if !errors.Is(lockErr, redisx.ErrLockFailed) && !errors.Is(lockErr, errDedupLockDisabled) {
-		// Fail closed: any non-contention, non-disabled acquire error means
-		// Redis is configured but currently unreachable. Better to surface an
-		// internal error than to fall through and risk duplicate PENDING
-		// sessions / quota drift.
-		return nil, xcodes.ErrInternal.Wrapf(lockErr, "acquire upload dedup lock")
+	if s.lock != nil {
+		target := dedupLockTarget(ownerType, ownerID, file.md5, file.size)
+		lockID, lockErr := s.lock.Acquire(ctx, target)
+		switch {
+		case lockErr == nil:
+			defer func() { _ = s.lock.Release(context.Background(), target, lockID) }()
+		case errors.Is(lockErr, redisx.ErrLockFailed):
+			// Another caller is creating the session; fall through to FindPendingDedup.
+		default:
+			// Fail closed: Redis configured but unreachable. Better to surface an
+			// internal error than fall through and risk duplicate PENDING sessions.
+			return nil, xcodes.ErrInternal.Wrapf(lockErr, "acquire upload dedup lock")
+		}
 	}
-	// lockErr == ErrLockFailed (someone else holds the lock; they will create
-	// the session) or errDedupLockDisabled (Redis not configured): in
-	// both cases we fall through to FindPendingDedup and the DB-level partial
-	// unique index is the backstop.
+	// No lock held (Redis unavailable) or contention: fall through to
+	// FindPendingDedup; if none exists we Create our own.
 
 	if existing, found, err := dal.FindPendingUploadSessionDedup(ctx, s.db, ownerType, ownerID, file.md5, file.size); err != nil {
 		return nil, xcodes.ErrInternal.Wrap(err)
@@ -771,25 +816,8 @@ func (s *Service) findOrCreateSession(ctx context.Context, ownerType int32, owne
 		Status:      int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt:   time.Now().Add(ttl),
 	}
-	inserted, err := dal.CreateUploadSession(ctx, s.db, session)
-	if err != nil {
+	if err := dal.CreateUploadSession(ctx, s.db, session); err != nil {
 		return nil, err
-	}
-	if !inserted {
-		// Lost the race to a concurrent caller (or the lock holder just
-		// committed). Re-read to pick up the winner's session.
-		existing, found, ferr := dal.FindPendingUploadSessionDedup(ctx, s.db, ownerType, ownerID, file.md5, file.size)
-		if ferr != nil {
-			return nil, xcodes.ErrInternal.Wrapf(ferr, "find existing after on-conflict")
-		}
-		if !found {
-			// ON CONFLICT DO NOTHING fired but no PENDING row is visible.
-			// The most plausible cause is a partial-index mismatch (e.g.
-			// a soft-deleted row is hitting the constraint) — surface as
-			// internal rather than silently inventing a session.
-			return nil, xcodes.ErrInternal.New("upload session not found after on-conflict do nothing")
-		}
-		return existing, nil
 	}
 
 	s.host.RecordOutcome(ctx, AuditEvent{
@@ -958,65 +986,6 @@ func validateFilenameExtension(filename string, allowed []string) error {
 		filename, fileExt, allowed))
 }
 
-// DedupLock prevents thundering herd of concurrent GetSTSCredential for
-// the same (owner, md5, size) from creating duplicate PENDING sessions. Lock
-// params come from config.Storage.UploadSession.DedupLock; the underlying
-// *redisx.Lock is constructed once at service init and shared by acquire/release.
-//
-// When Redis is not configured (lock == nil), acquire returns
-// NewDedupLock builds the dedup lock. Returns a zero-value DedupLock
-// (lock == nil) when rdb is nil — callers fall through to FindPendingDedup.
-// cfg fields with zero values fall back to safe defaults so this constructor
-// never fails for callers that bypass configx (e.g. tests).
-func NewDedupLock(rdb *redis.Client, cfg *config.LockConfig) DedupLock {
-	if rdb == nil {
-		return DedupLock{}
-	}
-	if cfg == nil {
-		cfg = &config.LockConfig{}
-	}
-	if cfg.Prefix == "" {
-		cfg.Prefix = "upload:dedup"
-	}
-	if cfg.TTL <= 0 {
-		cfg.TTL = 10 * time.Second
-	}
-	if cfg.Tries <= 0 {
-		cfg.Tries = 3
-	}
-	if cfg.Wait <= 0 {
-		cfg.Wait = 100 * time.Millisecond
-	}
-	lock, err := redisx.NewLock(rdb, &redisx.LockConfig{
-		Prefix: cfg.Prefix,
-		TTL:    cfg.TTL,
-		Tries:  cfg.Tries,
-		Wait:   cfg.Wait,
-	})
-	if err != nil {
-		// Defensive: NewLock only fails on empty prefix or non-positive TTL,
-		// both handled above. If we ever reach here it's a programmer error.
-		panic(fmt.Sprintf("upload: build dedup lock: %v", err))
-	}
-	return DedupLock{lock: lock}
-}
-
-func (l DedupLock) acquire(ctx context.Context, ownerType int32, ownerID int64, md5 string, size int64) (string, error) {
-	if l.lock == nil {
-		return "", errDedupLockDisabled
-	}
-	target := fmt.Sprintf("%d:%d:%s:%d", ownerType, ownerID, md5, size)
-	return l.lock.Acquire(ctx, target)
-}
-
-func (l DedupLock) release(ctx context.Context, ownerType int32, ownerID int64, md5 string, size int64, id string) {
-	if l.lock == nil {
-		return
-	}
-	target := fmt.Sprintf("%d:%d:%s:%d", ownerType, ownerID, md5, size)
-	_ = l.lock.Release(ctx, target, id)
-}
-
 // --- test-only accessors ---
 //
 // The following accessors exist solely so the parent package's integration tests
@@ -1045,4 +1014,18 @@ func TokenForTest() *uploadToken { return &uploadToken{} }
 // SetSTS swaps the internal STS service. Test-only.
 func SetSTS(s *Service, rdb *redis.Client, issuer sts.Issuer, cfg *config.STSConfig) {
 	s.sts = sts.New(rdb, issuer, cfg)
+}
+
+// dedupLockTarget builds the session-dedup lock TARGET — the per-domain suffix
+// only. The configured LockConfig.Prefix is applied by the shared *redisx.Lock
+// at Acquire time (redisx prefixes every key as "<Prefix>:<target>"), so these
+// helpers intentionally do NOT include the prefix.
+func dedupLockTarget(ownerType int32, ownerID int64, md5 string, size int64) string {
+	return fmt.Sprintf("%s:%d:%d:%s:%d", lockTargetDedup, ownerType, ownerID, md5, size)
+}
+
+// objectLockTarget builds the object-dedup lock TARGET (suffix only; the prefix
+// is applied by the lock instance — see dedupLockTarget).
+func objectLockTarget(vendor int32, bucket, md5 string) string {
+	return fmt.Sprintf("%s:%d:%s:%s", lockTargetObject, vendor, bucket, md5)
 }

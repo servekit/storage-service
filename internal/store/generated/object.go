@@ -4,9 +4,9 @@ package generated
 
 import (
 	"context"
-	"github.com/servekit/storage-service/internal/store/models"
 	"strings"
 
+	"github.com/servekit/storage-service/internal/store/models"
 	"gorm.io/cli/gorm/field"
 	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
@@ -106,6 +106,7 @@ var StorageObject = struct {
 	Extension    field.String
 	ETag         field.String
 	StorageClass field.Number[int32]
+	IsPublic     field.Bool
 	RefCount     field.Number[int64]
 	DeletedAt    field.Time
 	CreatedAt    field.Time
@@ -121,6 +122,7 @@ var StorageObject = struct {
 	Extension:    field.String{}.WithColumn("extension"),
 	ETag:         field.String{}.WithColumn("etag"),
 	StorageClass: field.Number[int32]{}.WithColumn("storage_class"),
+	IsPublic:     field.Bool{}.WithColumn("is_public"),
 	RefCount:     field.Number[int64]{}.WithColumn("ref_count"),
 	DeletedAt:    field.Time{}.WithColumn("deleted_at"),
 	CreatedAt:    field.Time{}.WithColumn("created_at"),

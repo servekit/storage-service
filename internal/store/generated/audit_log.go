@@ -4,7 +4,6 @@ package generated
 
 import (
 	"github.com/servekit/storage-service/internal/store/models"
-
 	"gorm.io/cli/gorm/field"
 )
 

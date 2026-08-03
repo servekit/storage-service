@@ -52,7 +52,7 @@ func (noopHost) RecordOutcome(context.Context, AuditEvent, error)               
 func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fake.FakeProvider, *gorm.DB) {
 	t.Helper()
 
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
@@ -96,14 +96,14 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 	}
 
 	svc := New(&Deps{
-		DB:        db,
-		Registry:  registry,
-		GID:       gid,
-		Cfg:       cfg,
-		Redis:     rdb,
-		STS:       &config.STSConfig{DefaultTTL: 15 * time.Minute, MaxTTL: time.Hour},
-		DedupLock: NewDedupLock(rdb, &config.LockConfig{}),
-		Host:      host,
+		DB:       db,
+		Registry: registry,
+		GID:      gid,
+		Cfg:      cfg,
+		Redis:    rdb,
+		STS:      &config.STSConfig{DefaultTTL: 15 * time.Minute, MaxTTL: time.Hour},
+		Lock:     NewLock(rdb, &config.LockConfig{}),
+		Host:     host,
 	})
 	return svc, fp, db
 }

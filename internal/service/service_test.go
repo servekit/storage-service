@@ -219,7 +219,7 @@ func (f *fakeSTSIssuerRecorder) lastPolicy() *storage.STSPolicy {
 func setupServiceWithFakeProvider(t *testing.T) *StorageService {
 	t.Helper()
 
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
@@ -250,14 +250,14 @@ func setupServiceWithFakeProvider(t *testing.T) *StorageService {
 		quota:    quota.New(&quota.Deps{DB: db, GID: gid, Audit: audit.New(&audit.Deps{DB: db, GID: gid}).Recorder(), DefaultQuotaBytes: 1 << 30}),
 	}
 	svc.upload = upload.New(&upload.Deps{
-		DB:        db,
-		Registry:  registry,
-		GID:       gid,
-		Cfg:       cfg,
-		Redis:     rdb,
-		STS:       &config.STSConfig{DefaultTTL: 15 * time.Minute, MaxTTL: time.Hour},
-		DedupLock: upload.NewDedupLock(rdb, &config.LockConfig{}),
-		Host:      svc,
+		DB:       db,
+		Registry: registry,
+		GID:      gid,
+		Cfg:      cfg,
+		Redis:    rdb,
+		STS:      &config.STSConfig{DefaultTTL: 15 * time.Minute, MaxTTL: time.Hour},
+		Lock:     upload.NewLock(rdb, &config.LockConfig{}),
+		Host:     svc,
 	})
 	// Wire a fake STS issuer so GetSTSCredential / BatchGetSTSCredential work
 	// without a real S3-compatible endpoint (S3Provider.GetSTSToken intentionally
@@ -542,7 +542,7 @@ func TestBatchGetSTSCredential_EmptyFiles(t *testing.T) {
 func setupServiceWithFakeObjectProvider(t *testing.T) (*StorageService, *fake.FakeProvider) {
 	t.Helper()
 
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
@@ -603,14 +603,14 @@ func setupServiceWithFakeObjectProvider(t *testing.T) (*StorageService, *fake.Fa
 		file:     file.New(&file.Deps{DB: db, GID: gid, Registry: registry, Audit: audit.New(&audit.Deps{DB: db, GID: gid}).Recorder(), Quota: quota.New(&quota.Deps{DB: db, GID: gid, Audit: audit.New(&audit.Deps{DB: db, GID: gid}).Recorder(), DefaultQuotaBytes: 1 << 30}), CDN: cfg.Storage.CDN}),
 	}
 	svc.upload = upload.New(&upload.Deps{
-		DB:        db,
-		Registry:  registry,
-		GID:       gid,
-		Cfg:       cfg,
-		Redis:     rdb,
-		STS:       &config.STSConfig{DefaultTTL: 15 * time.Minute, MaxTTL: time.Hour},
-		DedupLock: upload.NewDedupLock(rdb, &config.LockConfig{}),
-		Host:      svc,
+		DB:       db,
+		Registry: registry,
+		GID:      gid,
+		Cfg:      cfg,
+		Redis:    rdb,
+		STS:      &config.STSConfig{DefaultTTL: 15 * time.Minute, MaxTTL: time.Hour},
+		Lock:     upload.NewLock(rdb, &config.LockConfig{}),
+		Host:     svc,
 	})
 	return svc, fp
 }
@@ -1485,7 +1485,7 @@ func TestMD5Dedup_VendorDiscrimination(t *testing.T) {
 
 // TestGetSTSCredential_ConcurrentDedup verifies that concurrent GetSTSCredential
 // calls for the same (owner, md5, size) all observe the SAME session — the dedup
-// lock (DedupLock) + FindPendingDedup fallback prevents the thundering
+// lock (upload.NewLock) + FindPendingDedup fallback prevents the thundering
 // herd. Fills a gap flagged in the Task 5 review.
 //
 // NOTE on miniredis: miniredis is single-threaded, so the SetNX-based lock

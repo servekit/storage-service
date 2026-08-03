@@ -19,12 +19,14 @@ server:
   http_addr: ":8081"
 
 database:
-  host: localhost
-  port: 5432
-  user: postgres
-  password: postgres
-  dbname: storage_test
-  sslmode: disable
+  driver: postgres
+  postgres:
+    host: localhost
+    port: 5432
+    user: postgres
+    password: postgres
+    dbname: storage_test
+    sslmode: disable
 
 storage:
   upload_token_ttl: 15m
@@ -84,11 +86,11 @@ func TestLoadFromFile(t *testing.T) {
 	}
 
 	// Verify database section.
-	if cfg.Database.Host != "localhost" {
-		t.Errorf("Database.Host = %q, want %q", cfg.Database.Host, "localhost")
+	if cfg.Database.Postgres.Host != "localhost" {
+		t.Errorf("Database.Host = %q, want %q", cfg.Database.Postgres.Host, "localhost")
 	}
-	if cfg.Database.Port != 5432 {
-		t.Errorf("Database.Port = %d, want %d", cfg.Database.Port, 5432)
+	if cfg.Database.Postgres.Port != 5432 {
+		t.Errorf("Database.Port = %d, want %d", cfg.Database.Postgres.Port, 5432)
 	}
 
 	// Verify storage section.
@@ -143,11 +145,13 @@ func TestDefaultsApplied(t *testing.T) {
 	// Minimal config: only required fields, leaving defaults to kick in.
 	minimalYAML := `
 database:
-  host: localhost
-  port: 5432
-  user: test
-  password: test
-  dbname: test
+  driver: postgres
+  postgres:
+    host: localhost
+    port: 5432
+    user: test
+    password: test
+    dbname: test
 storage:
   upload_token_secret: "secret"
   default_bucket: "default"

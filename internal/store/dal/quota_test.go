@@ -14,7 +14,7 @@ import (
 
 func setupQuotaTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	if err := dbx.AutoMigrate(db, models.AllModels()...); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}

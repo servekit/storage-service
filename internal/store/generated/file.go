@@ -5,9 +5,9 @@ package generated
 import (
 	"context"
 	"regexp"
-	"github.com/servekit/storage-service/internal/store/models"
 	"strings"
 
+	"github.com/servekit/storage-service/internal/store/models"
 	"gorm.io/cli/gorm/field"
 	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"

@@ -4,9 +4,9 @@ package generated
 
 import (
 	"context"
-	"github.com/servekit/storage-service/internal/store/models"
 	"strings"
 
+	"github.com/servekit/storage-service/internal/store/models"
 	"gorm.io/cli/gorm/field"
 	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
@@ -34,7 +34,7 @@ func (e _StorageQuotaQueryImpl[T]) GetActiveByID(ctx context.Context, id int64) 
 	var sb strings.Builder
 	_params := make([]any, 0, 2)
 
-	sb.WriteString("SELECT * FROM ? WHERE id = ? AND deleted_at IS NULL")
+	sb.WriteString("SELECT * FROM ? WHERE id = ?")
 	_params = append(_params, clause.Table{Name: clause.CurrentTable}, id)
 
 	var result models.StorageQuota
@@ -49,7 +49,7 @@ func (e _StorageQuotaQueryImpl[T]) GetUsedBytes(ctx context.Context, ownerType i
 	sb.WriteString("SELECT COALESCE(used_bytes, 0) AS used_bytes")
 	sb.WriteString(" FROM ?")
 	_params = append(_params, clause.Table{Name: clause.CurrentTable})
-	sb.WriteString(" WHERE owner_type = ? AND owner_id = ? AND deleted_at IS NULL")
+	sb.WriteString(" WHERE owner_type = ? AND owner_id = ?")
 	_params = append(_params, ownerType, ownerID)
 
 	var result models.UsedBytesRow
@@ -64,7 +64,6 @@ func (e _StorageQuotaQueryImpl[T]) GetTotalUsedBytes(ctx context.Context) (model
 	sb.WriteString("SELECT COALESCE(SUM(used_bytes), 0) AS used_bytes")
 	sb.WriteString(" FROM ?")
 	_params = append(_params, clause.Table{Name: clause.CurrentTable})
-	sb.WriteString(" WHERE deleted_at IS NULL")
 
 	var result models.UsedBytesRow
 	err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
@@ -77,7 +76,6 @@ var StorageQuota = struct {
 	OwnerID    field.Number[int64]
 	TotalBytes field.Number[int64]
 	UsedBytes  field.Number[int64]
-	DeletedAt  field.Time
 	CreatedAt  field.Time
 	UpdatedAt  field.Time
 }{
@@ -86,7 +84,6 @@ var StorageQuota = struct {
 	OwnerID:    field.Number[int64]{}.WithColumn("owner_id"),
 	TotalBytes: field.Number[int64]{}.WithColumn("total_bytes"),
 	UsedBytes:  field.Number[int64]{}.WithColumn("used_bytes"),
-	DeletedAt:  field.Time{}.WithColumn("deleted_at"),
 	CreatedAt:  field.Time{}.WithColumn("created_at"),
 	UpdatedAt:  field.Time{}.WithColumn("updated_at"),
 }

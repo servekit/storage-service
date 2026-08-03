@@ -6,40 +6,44 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/servekit/go-common/redisx"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/service/conv"
 	"github.com/servekit/storage-service/internal/store/dal"
+	"github.com/servekit/storage-service/pkg/xcodes"
 )
-
-// reapAdvisoryLockKey is the PostgreSQL advisory-lock key identifying the
-// upload-session reap lease. Two HA replicas running the reap job
-// simultaneously will contend on this single key; only one acquires and
-// proceeds per cycle. The value 0x534F4C47 ("SOLG") is arbitrary but
-// stable; tests pin the same value (see internal/store/dal/upload_session_test.go).
-const reapAdvisoryLockKey int64 = 0x534F4C47
 
 // ReapExpiredSessions scans one batch of expired PENDING sessions and cleans
 // up OSS orphans. Pure logic — caller (jobs.Scheduler, test) decides when to
 // invoke. Returns the count of orphan objects deleted from cloud storage.
 //
-// HA safety: acquires a session-level advisory lock before scanning so that
-// two replicas running the reap job concurrently do not both process the same
-// batch. If the lock cannot be acquired (another replica holds it), returns
-// (0, nil) without touching OSS.
+// HA safety: acquires a cross-replica Redis lock (replaces the former
+// PostgreSQL advisory lock) before scanning so two replicas running the reap
+// job concurrently do not both process the same batch. If Redis is unavailable
+// (reaperLock nil) or the lock is held, it either proceeds lock-free or skips
+// the cycle. Correctness is independent of this lock — the per-row CAS in
+// MarkUploadSessionExpired is the last-line defense.
 func (s *Service) ReapExpiredSessions(ctx context.Context) (int, error) {
-	release, acquired, err := dal.TryUploadSessionAdvisoryLock(ctx, s.db, reapAdvisoryLockKey)
-	if err != nil {
-		return 0, err
-	}
-	defer func() {
-		if relErr := release(); relErr != nil {
-			slog.Warn("upload gc: release advisory lock lease", "error", relErr)
+	if s.lock != nil {
+		lockID, lockErr := s.lock.Acquire(ctx, lockTargetReap)
+		if lockErr != nil {
+			if errors.Is(lockErr, redisx.ErrLockFailed) {
+				slog.Info("upload gc: lease held by another replica, skipping cycle")
+				return 0, nil
+			}
+			return 0, xcodes.ErrInternal.Wrapf(lockErr, "acquire upload gc lock")
 		}
-	}()
-	if !acquired {
-		slog.Info("upload gc: lease held by another replica, skipping cycle")
-		return 0, nil
+		// GC spans OSS Head/Delete across a batch and can outlive the shared
+		// lock TTL; KeepAlive renews it (at TTL/3) until ReapExpiredSessions
+		// returns, so the TTL acts only as the crash-recovery window.
+		cancelKeepAlive := s.lock.KeepAlive(ctx, lockTargetReap, lockID)
+		defer cancelKeepAlive()
+		defer func() {
+			if relErr := s.lock.Release(context.Background(), lockTargetReap, lockID); relErr != nil {
+				slog.Warn("upload gc: release redis gc lock", "error", relErr)
+			}
+		}()
 	}
 
 	now := time.Now()

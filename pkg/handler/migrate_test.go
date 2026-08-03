@@ -11,7 +11,7 @@ import (
 // TestMigrate_Idempotent verifies a second run on an already-migrated DB
 // is a no-op.
 func TestMigrate_Idempotent(t *testing.T) {
-	db := dbx.SetupTestDB(t)
+	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 
 	require.NoError(t, Migrate(db))
 	require.NoError(t, Migrate(db),

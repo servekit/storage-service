@@ -150,15 +150,15 @@ func New(cfg *config.Config, opts ...option.Option) (*StorageService, error) {
 	// subpackage can call back into the parent's quota/audit machinery without
 	// importing internal/service (no import cycle).
 	svc.upload = upload.New(&upload.Deps{
-		DB:        db,
-		Registry:  registry,
-		GID:       gidGen,
-		Cfg:       cfg,
-		Limiter:   limiter,
-		Redis:     redisClient,
-		STS:       cfg.Storage.STS,
-		DedupLock: upload.NewDedupLock(redisClient, cfg.Storage.UploadSession.DedupLock),
-		Host:      svc,
+		DB:       db,
+		Registry: registry,
+		GID:      gidGen,
+		Cfg:      cfg,
+		Limiter:  limiter,
+		Redis:    redisClient,
+		STS:      cfg.Storage.STS,
+		Lock:     upload.NewLock(redisClient, cfg.Storage.UploadSession.Lock),
+		Host:     svc,
 	})
 
 	// jobs.Scheduler owns the cron instance; setupJobs builds it, registers

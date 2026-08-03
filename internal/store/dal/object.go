@@ -10,7 +10,6 @@ import (
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // FindObjectByVendorBucketMD5 finds an active storage object by (vendor, bucket, md5).
@@ -70,41 +69,26 @@ func BatchGetObjectsByIDs(ctx context.Context, tx *gorm.DB, ids []int64) (map[in
 	return result, nil
 }
 
-// CreateOrGetObject atomically inserts a storage object or returns the existing one.
-// Uses INSERT ... ON CONFLICT (vendor, bucket, md5) DO NOTHING. The dedup relies
-// on a partial unique index scoped to non-deleted rows; Postgres does not allow
-// a WHERE clause directly on ON CONFLICT DO NOTHING, so we resolve any conflict
-// (including a soft-deleted row colliding on the same key) via the fallback
-// FindObjectByVendorBucketMD5 lookup below.
-// Returns (object, inserted, error) where inserted indicates if a new row was created.
+// CreateOrGetObject returns the existing object for (vendor, bucket, md5) or
+// inserts a new one. Dedup of concurrent inserts for the same key is serialized
+// by a Redis lock in the service layer (see upload.confirmUpload); the DB
+// enforces no uniqueness on these columns, keeping the schema portable across
+// postgres/mysql/sqlite. Under the lock this check-then-insert is race-free;
+// without Redis (lock disabled) two concurrent confirms of identical content
+// may create duplicate object rows — accepted for DB portability.
+// Returns (object, inserted, error) where inserted indicates a new row was created.
 func CreateOrGetObject(ctx context.Context, tx *gorm.DB, obj *models.StorageObject) (*models.StorageObject, bool, error) {
-	result := tx.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns: []clause.Column{
-				generated.StorageObject.Vendor.Column(),
-				generated.StorageObject.Bucket.Column(),
-				generated.StorageObject.MD5.Column(),
-			},
-			DoNothing: true,
-		}).
-		Create(obj)
-
-	if result.Error != nil {
-		return nil, false, xcodes.ErrInternal.Wrapf(result.Error, "create or get")
-	}
-
-	if result.RowsAffected > 0 {
-		return obj, true, nil
-	}
-
 	existing, found, err := FindObjectByVendorBucketMD5(ctx, tx, obj.Vendor, obj.Bucket, obj.MD5)
 	if err != nil {
-		return nil, false, xcodes.ErrInternal.Wrapf(err, "find existing after conflict")
+		return nil, false, xcodes.ErrInternal.Wrapf(err, "find existing object")
 	}
-	if !found {
-		return nil, false, xcodes.ErrInternal.New("object not found after ON CONFLICT DO NOTHING")
+	if found {
+		return existing, false, nil
 	}
-	return existing, false, nil
+	if err := tx.WithContext(ctx).Create(obj).Error; err != nil {
+		return nil, false, xcodes.ErrInternal.Wrapf(err, "create object")
+	}
+	return obj, true, nil
 }
 
 // IncrObjectRefCount atomically increments the reference count for a storage object.
