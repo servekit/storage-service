@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"buf.build/go/protovalidate"
+	protovalidate_middleware "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/protovalidate"
 	"github.com/servekit/go-common/grpcx"
 	"github.com/servekit/go-common/signalx"
-	protovalidate_middleware "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/protovalidate"
 	"google.golang.org/grpc"
 
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"

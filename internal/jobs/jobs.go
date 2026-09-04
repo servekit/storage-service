@@ -9,9 +9,9 @@ package jobs
 import (
 	"fmt"
 
+	"github.com/robfig/cron/v3"
 	"github.com/servekit/go-common/cronx"
 	"github.com/servekit/go-common/lifecycle"
-	"github.com/robfig/cron/v3"
 )
 
 // Scheduler wraps a cron.Cron and adapts it to lifecycle.Service. Callers

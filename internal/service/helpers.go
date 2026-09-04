@@ -2,12 +2,10 @@ package service
 
 import (
 	"fmt"
-	"log/slog"
 
 	gidservice "github.com/servekit/gid-service/pkg"
 	gidconfig "github.com/servekit/gid-service/pkg/config"
 
-	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/option"
 
@@ -20,83 +18,38 @@ import (
 	"gorm.io/gorm"
 )
 
-// resolveDB returns the DB pool to use. If the caller injected one via WithDB,
-// use it as-is (caller owns lifecycle). Otherwise build from cfg and register
-// a Stopper on mgr so service.Stop closes it.
+// resolveDB returns the DB pool to use: an injected one as-is (caller owns
+// lifecycle), otherwise built from cfg with a Stopper registered on mgr via
+// dbx.Connect.
 func resolveDB(cfg *config.Config, external *gorm.DB, mgr *lifecycle.Manager) (*gorm.DB, error) {
-	if external != nil {
-		return external, nil
-	}
-	db, err := dbx.New(cfg.Database)
-	if err != nil {
-		return nil, fmt.Errorf("init database: %w", err)
-	}
-	mgr.AddStopper("db", lifecycle.StopFunc(func() {
-		sqlDB, err := db.DB()
-		if err != nil {
-			slog.Warn("get sql db for close", "error", err)
-			return
-		}
-		if err := sqlDB.Close(); err != nil {
-			slog.Warn("close db", "error", err)
-		}
-	}))
-	return db, nil
+	return dbx.Connect(cfg.Database, external, mgr)
 }
 
-// resolveGID returns the GIDService. An injected handler
-// (option.WithGIDHandler, set when a parent embeds this service) takes
-// precedence over everything else and works even when cfg is nil (no
-// ThirdParty.GID configured); the parent owns lifecycle, so nothing is
-// registered in that path. Otherwise cfg must be set: grpc mode dials
-// cfg.Target and registers a stopper (the GIDService's Close drops the grpc
-// client); module mode builds one from cfg.Config (standalone cmd/server) and
-// registers the raw Handler with the Manager via mgr.Add (it owns the
-// Handler's Start/Stop). cfg.Config is gid-service's own *gidconfig.Config, so
-// gidservice.NewModule consumes it directly and validates the snowflake fields
-// at build time. The GIDService interface is internal.
-func resolveGID(o *option.Options, cfg *config.RemoteServiceConfig[*gidconfig.Config], mgr *lifecycle.Manager) (gid_service.GIDService, error) {
+// resolveGID returns the gid dependency. Construction delegates to
+// gidservice.Connect, which owns the mode switch and lifecycle registration;
+// only the adoption of a parent-injected Handler stays here — it reads this
+// service's own options and the parent owns that lifecycle.
+func resolveGID(o *option.Options, cfg *config.RemoteServiceConfig[*gidconfig.Config], mgr *lifecycle.Manager) (gidservice.Service, error) {
 	// Injected handler takes precedence (a parent shares its gid Handler),
 	// even if cfg is nil (no ThirdParty.GID configured).
 	if o.GIDHandler != nil {
-		return gid_service.NewModule(o.GIDHandler), nil // borrowed; parent owns lifecycle
+		return o.GIDHandler, nil // borrowed; parent owns lifecycle
 	}
 	if cfg == nil {
 		return nil, fmt.Errorf("third_party.gid: not configured")
 	}
-	switch cfg.Mode {
-	case "grpc":
-		gid, err := gid_service.NewGRPC(cfg.Target)
-		if err != nil {
-			return nil, fmt.Errorf("init gid-service: %w", err)
-		}
-		mgr.AddStopper("gid", lifecycle.StopFunc(func() {
-			if err := gid.Close(); err != nil {
-				slog.Warn("close gid-service", "error", err)
-			}
-		}))
-		return gid, nil
-	case "module":
-		// o.GIDHandler is nil here (handled above); build from cfg.
-		if cfg.Config == nil {
-			return nil, fmt.Errorf("third_party.gid: module config required when no handler injected")
-		}
-		hdl, err := gidservice.NewModule(cfg.Config)
-		if err != nil {
-			return nil, fmt.Errorf("init gid-service: %w", err)
-		}
-		gid := gid_service.NewModule(hdl)
-		mgr.Add("gid", hdl)
-		return gid, nil
-	default:
-		return nil, fmt.Errorf("third_party.gid: unknown mode %q", cfg.Mode)
-	}
+	gid, _, err := gidservice.Connect(gidservice.ConnectConfig{
+		Mode:   cfg.Mode,
+		Target: cfg.Target,
+		Config: cfg.Config,
+	}, mgr)
+	return gid, err
 }
 
 // resolveRedis returns the Redis client to use. If the caller injected one via
 // WithRedis, use it as-is. Otherwise, if any Redis-dependent feature is
 // configured (rate limit OR STS caching), build from cfg and register a
-// Stopper on mgr.
+// Stopper on mgr via redisx.Connect.
 //
 // STS always constructs a *Service with a Redis client even when callers
 // don't intend to use the cache (e.g. pre-signed URL flow only), and STS
@@ -110,16 +63,7 @@ func resolveRedis(cfg *config.Config, external *redis.Client, mgr *lifecycle.Man
 	if !rateLimitConfigured(cfg.Storage.RateLimit) && !stsConfigured(cfg.Storage.STS) {
 		return nil, nil
 	}
-	client, err := redisx.New(cfg.Redis)
-	if err != nil {
-		return nil, fmt.Errorf("init redis: %w", err)
-	}
-	mgr.AddStopper("redis", lifecycle.StopFunc(func() {
-		if err := client.Close(); err != nil {
-			slog.Warn("close redis", "error", err)
-		}
-	}))
-	return client, nil
+	return redisx.Connect(cfg.Redis, nil, mgr)
 }
 
 // --- internal helpers ---

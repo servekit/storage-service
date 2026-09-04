@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/servekit/go-common/jsonx"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awssts "github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/servekit/go-common/jsonx"
 
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 )

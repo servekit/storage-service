@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/servekit/go-common/jsonx"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/global"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
 	iam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/region"
+	"github.com/servekit/go-common/jsonx"
 
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 )

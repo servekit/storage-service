@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	gidservice "github.com/servekit/gid-service/pkg"
 	"github.com/servekit/storage-service/internal/jobs"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/service/admin"
@@ -14,7 +15,6 @@ import (
 	"github.com/servekit/storage-service/internal/service/file"
 	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/service/upload"
-	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/internal/version"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/option"
@@ -37,7 +37,7 @@ type StorageService struct {
 	db       *gorm.DB
 	redis    *redis.Client
 	registry *storage.Registry
-	gid      gid_service.GIDService
+	gid      gidservice.Service
 	limiter  ratelimit.Limiter
 	cfg      *config.Config
 	manager  *lifecycle.Manager

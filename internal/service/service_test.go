@@ -16,17 +16,19 @@ import (
 	"github.com/servekit/go-common/lifecycle"
 	"github.com/servekit/go-common/redisx"
 
+	gidv1 "github.com/servekit/gid-service/gen/gid/v1"
+	gidservice "github.com/servekit/gid-service/pkg"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 	"github.com/servekit/storage-service/internal/service/audit"
+	"github.com/servekit/storage-service/internal/service/common"
 	"github.com/servekit/storage-service/internal/service/file"
 	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/service/upload"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
-	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
@@ -172,17 +174,16 @@ func openOwnedTestDB(t *testing.T) (*gorm.DB, *sql.DB, error) {
 
 // --- GetSTSCredential integration tests ---
 
-// seqGID is a gid_service.GIDService implementation returning sequential IDs
+// seqGID is a gidservice.Service implementation returning sequential IDs
 // without any external dependency. Safe for concurrent use.
 type seqGID struct {
+	gidv1.UnimplementedGidServiceServer
 	counter int64
 }
 
-func (g *seqGID) NextID(_ context.Context) (int64, error) {
-	return atomic.AddInt64(&g.counter, 1), nil
+func (g *seqGID) NextID(_ context.Context, _ *gidv1.NextIDRequest) (*gidv1.NextIDResponse, error) {
+	return &gidv1.NextIDResponse{Id: atomic.AddInt64(&g.counter, 1)}, nil
 }
-
-func (g *seqGID) Close() error { return nil }
 
 // fakeSTSIssuerRecorder returns a fixed STSCredential and records the policy
 // passed to it so tests can assert on TTL. Mirrors the type used in
@@ -384,8 +385,8 @@ func TestGetSTSCredential_TTLFromRequest(t *testing.T) {
 	assert.Equal(t, 30*time.Second, policy.TTL)
 }
 
-// Compile-time assertion that *seqGID satisfies gid_service.GIDService.
-var _ gid_service.GIDService = (*seqGID)(nil)
+// Compile-time assertion that *seqGID satisfies gidservice.Service.
+var _ gidservice.Service = (*seqGID)(nil)
 
 func TestBatchGetSTSCredential_AllSucceed(t *testing.T) {
 	svc := setupServiceWithFakeProvider(t)
@@ -1033,7 +1034,7 @@ func TestCancelUpload_AlreadyConfirmed(t *testing.T) {
 func seedFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerID int64, metadata map[string]string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	objID, err := svc.gid.NextID(ctx)
+	objID, err := common.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	obj := &models.StorageObject{
 		ID: objID, Vendor: 3, Bucket: "uploads", ObjectKey: "uploads/seed",
@@ -1041,7 +1042,7 @@ func seedFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerI
 	}
 	require.NoError(t, svc.db.Create(obj).Error)
 
-	fileID, err := svc.gid.NextID(ctx)
+	fileID, err := common.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	file := &models.StorageFile{
 		ID:        fileID,
@@ -1062,7 +1063,7 @@ func seedFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerI
 func seedPublicFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerID int64) int64 {
 	t.Helper()
 	ctx := context.Background()
-	objID, err := svc.gid.NextID(ctx)
+	objID, err := common.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	obj := &models.StorageObject{
 		ID: objID, Vendor: 3, Bucket: "uploads", ObjectKey: "uploads/seed-public",
@@ -1070,7 +1071,7 @@ func seedPublicFileForOwner(t *testing.T, svc *StorageService, ownerType int32, 
 	}
 	require.NoError(t, svc.db.Create(obj).Error)
 
-	fileID, err := svc.gid.NextID(ctx)
+	fileID, err := common.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	file := &models.StorageFile{
 		ID:        fileID,

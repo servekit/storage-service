@@ -14,14 +14,15 @@ import (
 	"strings"
 	"time"
 
+	gidservice "github.com/servekit/gid-service/pkg"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
+	"github.com/servekit/storage-service/internal/service/common"
 	"github.com/servekit/storage-service/internal/service/conv"
 	"github.com/servekit/storage-service/internal/service/sts"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
-	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
@@ -39,7 +40,7 @@ import (
 type Service struct {
 	db       *gorm.DB
 	registry *storage.Registry
-	gid      gid_service.GIDService
+	gid      gidservice.Service
 	cfg      *config.Config
 	limiter  ratelimit.Limiter
 
@@ -132,7 +133,7 @@ func NewLock(rdb *redis.Client, cfg *config.LockConfig) *redisx.Lock {
 type Deps struct {
 	DB       *gorm.DB
 	Registry *storage.Registry
-	GID      gid_service.GIDService
+	GID      gidservice.Service
 	Cfg      *config.Config
 	Limiter  ratelimit.Limiter
 	Redis    *redis.Client
@@ -429,7 +430,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 		StorageClass: int32(storagev1.StorageClass_STORAGE_CLASS_STANDARD),
 		IsPublic:     confirmIsPublic,
 	}
-	if obj.ID, err = s.gid.NextID(ctx); err != nil {
+	if obj.ID, err = common.NextID(ctx, s.gid); err != nil {
 		return nil, xcodes.ErrInternal.Wrapf(err, "generate object id")
 	}
 
@@ -470,7 +471,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 			// file can be queried without joining the object.
 			IsPublic: createdObj.IsPublic,
 		}
-		id, gidErr := s.gid.NextID(ctx)
+		id, gidErr := common.NextID(ctx, s.gid)
 		if gidErr != nil {
 			return xcodes.ErrInternal.Wrapf(gidErr, "generate file id")
 		}
@@ -794,7 +795,7 @@ func (s *Service) findOrCreateSession(ctx context.Context, ownerType int32, owne
 	}
 	isPublic := isPublicBucketACL(bucketCfg.ACL)
 
-	id, err := s.gid.NextID(ctx)
+	id, err := common.NextID(ctx, s.gid)
 	if err != nil {
 		return nil, fmt.Errorf("generate session id: %w", err)
 	}
@@ -863,7 +864,7 @@ func (s *Service) handleInstantUpload(ctx context.Context, ownerType int32, owne
 			Metadata:    models.MapJSON(metadata),
 			IsPublic:    isPublic,
 		}
-		if id, gidErr := s.gid.NextID(ctx); gidErr != nil {
+		if id, gidErr := common.NextID(ctx, s.gid); gidErr != nil {
 			return fmt.Errorf("generate file id: %w", gidErr)
 		} else {
 			uf.ID = id

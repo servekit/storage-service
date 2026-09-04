@@ -9,12 +9,13 @@ import (
 	"errors"
 	"fmt"
 
+	gidservice "github.com/servekit/gid-service/pkg"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/service/audit"
+	"github.com/servekit/storage-service/internal/service/common"
 	"github.com/servekit/storage-service/internal/service/conv"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
-	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"gorm.io/gorm"
@@ -23,7 +24,7 @@ import (
 // Service holds quota-domain dependencies.
 type Service struct {
 	db                *gorm.DB
-	gid               gid_service.GIDService
+	gid               gidservice.Service
 	audit             audit.Recorder
 	defaultQuotaBytes int64
 }
@@ -31,7 +32,7 @@ type Service struct {
 // Deps is the dependency bundle injected by the parent service.
 type Deps struct {
 	DB                *gorm.DB
-	GID               gid_service.GIDService
+	GID               gidservice.Service
 	Audit             audit.Recorder
 	DefaultQuotaBytes int64
 }
@@ -279,7 +280,7 @@ func (s *Service) ensureQuota(ctx context.Context, ownerType int32, ownerID int6
 		return quota, nil
 	}
 
-	id, gidErr := s.gid.NextID(ctx)
+	id, gidErr := common.NextID(ctx, s.gid)
 	if gidErr != nil {
 		return nil, fmt.Errorf("generate quota id: %w", gidErr)
 	}

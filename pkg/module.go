@@ -8,11 +8,16 @@ import (
 	"gorm.io/gorm"
 )
 
+// Handler is the in-process entry point. Aliased to *handler.Handler so
+// external code references it as storageservice.Handler, matching the other
+// services' pkg shape.
+type Handler = handler.Handler
+
 // NewModule creates a Handler for in-process use. The Handler satisfies both
 // storagev1.StorageServiceServer (call RPC methods directly) and signalx.Service
 // (manage lifecycle). Callers that inject resources via options own those
 // resources' lifecycle; Handler.Stop only releases resources it created.
-func NewModule(cfg *config.Config, opts ...option.Option) (*handler.Handler, error) {
+func NewModule(cfg *config.Config, opts ...option.Option) (*Handler, error) {
 	return handler.New(cfg, opts...)
 }
 

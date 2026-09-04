@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	gidv1 "github.com/servekit/gid-service/gen/gid/v1"
+
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 
 	"github.com/stretchr/testify/assert"
@@ -12,10 +14,13 @@ import (
 
 // noopGID returns a fixed ID for recorder tests that don't need a real gid
 // service.
-type noopGID struct{}
+type noopGID struct {
+	gidv1.UnimplementedGidServiceServer
+}
 
-func (noopGID) NextID(context.Context) (int64, error) { return 1, nil }
-func (noopGID) Close() error                          { return nil }
+func (noopGID) NextID(context.Context, *gidv1.NextIDRequest) (*gidv1.NextIDResponse, error) {
+	return &gidv1.NextIDResponse{Id: 1}, nil
+}
 
 // TestEventStatusDerivation confirms the pure status-derivation logic used by
 // RecordOutcome, independent of any DB/gid wiring (which needs testcontainers).

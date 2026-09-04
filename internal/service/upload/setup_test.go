@@ -9,10 +9,11 @@ import (
 	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/redisx"
 
+	gidv1 "github.com/servekit/gid-service/gen/gid/v1"
+	gidservice "github.com/servekit/gid-service/pkg"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/store/models"
-	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/pkg/config"
 
 	"github.com/stretchr/testify/require"
@@ -21,20 +22,19 @@ import (
 
 const testSecret = "test-secret-key-12345"
 
-// seqGID is a gid_service.GIDService returning sequential IDs with no external
+// seqGID is a gidservice.Service returning sequential IDs with no external
 // dependency. Mirrors the one in the parent service_test.go.
 type seqGID struct {
+	gidv1.UnimplementedGidServiceServer
 	counter int64
 }
 
-func (g *seqGID) NextID(_ context.Context) (int64, error) {
-	return atomic.AddInt64(&g.counter, 1), nil
+func (g *seqGID) NextID(_ context.Context, _ *gidv1.NextIDRequest) (*gidv1.NextIDResponse, error) {
+	return &gidv1.NextIDResponse{Id: atomic.AddInt64(&g.counter, 1)}, nil
 }
 
-func (g *seqGID) Close() error { return nil }
-
-// Compile-time assertion that *seqGID satisfies gid_service.GIDService.
-var _ gid_service.GIDService = (*seqGID)(nil)
+// Compile-time assertion that *seqGID satisfies gidservice.Service.
+var _ gidservice.Service = (*seqGID)(nil)
 
 // noopHost is a minimal upload.Host used by reap tests that don't assert on quota
 // or audit recording. ReapExpiredSessions never calls CheckQuota/Reserve, and

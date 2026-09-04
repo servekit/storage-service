@@ -16,6 +16,7 @@ import (
 
 	"github.com/servekit/go-common/dbx"
 
+	gidservice "github.com/servekit/gid-service/pkg"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
@@ -24,7 +25,6 @@ import (
 	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
-	"github.com/servekit/storage-service/internal/thirdcall/gid_service"
 	"github.com/servekit/storage-service/internal/utils/pagination"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/xcodes"
@@ -36,7 +36,7 @@ import (
 // Service holds file-domain dependencies.
 type Service struct {
 	db       *gorm.DB
-	gid      gid_service.GIDService
+	gid      gidservice.Service
 	registry *storage.Registry
 	audit    audit.Recorder
 	quota    *quota.Service
@@ -46,7 +46,7 @@ type Service struct {
 // Deps is the dependency bundle injected by the parent service.
 type Deps struct {
 	DB       *gorm.DB
-	GID      gid_service.GIDService
+	GID      gidservice.Service
 	Registry *storage.Registry
 	Audit    audit.Recorder
 	Quota    *quota.Service
