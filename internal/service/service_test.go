@@ -23,7 +23,6 @@ import (
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 	"github.com/servekit/storage-service/internal/service/audit"
-	"github.com/servekit/storage-service/internal/service/common"
 	"github.com/servekit/storage-service/internal/service/file"
 	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/service/upload"
@@ -1034,7 +1033,7 @@ func TestCancelUpload_AlreadyConfirmed(t *testing.T) {
 func seedFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerID int64, metadata map[string]string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	objID, err := common.NextID(ctx, svc.gid)
+	objID, err := gidservice.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	obj := &models.StorageObject{
 		ID: objID, Vendor: 3, Bucket: "uploads", ObjectKey: "uploads/seed",
@@ -1042,7 +1041,7 @@ func seedFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerI
 	}
 	require.NoError(t, svc.db.Create(obj).Error)
 
-	fileID, err := common.NextID(ctx, svc.gid)
+	fileID, err := gidservice.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	file := &models.StorageFile{
 		ID:        fileID,
@@ -1063,7 +1062,7 @@ func seedFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerI
 func seedPublicFileForOwner(t *testing.T, svc *StorageService, ownerType int32, ownerID int64) int64 {
 	t.Helper()
 	ctx := context.Background()
-	objID, err := common.NextID(ctx, svc.gid)
+	objID, err := gidservice.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	obj := &models.StorageObject{
 		ID: objID, Vendor: 3, Bucket: "uploads", ObjectKey: "uploads/seed-public",
@@ -1071,7 +1070,7 @@ func seedPublicFileForOwner(t *testing.T, svc *StorageService, ownerType int32, 
 	}
 	require.NoError(t, svc.db.Create(obj).Error)
 
-	fileID, err := common.NextID(ctx, svc.gid)
+	fileID, err := gidservice.NextID(ctx, svc.gid)
 	require.NoError(t, err)
 	file := &models.StorageFile{
 		ID:        fileID,

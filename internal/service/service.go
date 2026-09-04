@@ -20,6 +20,7 @@ import (
 	"github.com/servekit/storage-service/pkg/option"
 
 	"github.com/servekit/go-common/cronx"
+	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/lifecycle"
 	"github.com/servekit/go-common/ratelimit"
 
@@ -66,7 +67,7 @@ func New(cfg *config.Config, opts ...option.Option) (*StorageService, error) {
 	o := option.Apply(opts...)
 	mgr := lifecycle.NewManager()
 
-	db, err := resolveDB(cfg, o.DB, mgr)
+	db, err := dbx.Connect(cfg.Database, o.DB, mgr)
 	if err != nil {
 		return nil, errors.Join(err, mgr.Stop())
 	}

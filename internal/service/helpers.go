@@ -9,21 +9,12 @@ import (
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/option"
 
-	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/lifecycle"
 	"github.com/servekit/go-common/ratelimit"
 	"github.com/servekit/go-common/redisx"
 
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 )
-
-// resolveDB returns the DB pool to use: an injected one as-is (caller owns
-// lifecycle), otherwise built from cfg with a Stopper registered on mgr via
-// dbx.Connect.
-func resolveDB(cfg *config.Config, external *gorm.DB, mgr *lifecycle.Manager) (*gorm.DB, error) {
-	return dbx.Connect(cfg.Database, external, mgr)
-}
 
 // resolveGID returns the gid dependency. Construction delegates to
 // gidservice.Connect, which owns the mode switch and lifecycle registration;

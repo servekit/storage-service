@@ -6,7 +6,6 @@ import (
 
 	gidservice "github.com/servekit/gid-service/pkg"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
-	"github.com/servekit/storage-service/internal/service/common"
 	"github.com/servekit/storage-service/internal/store/dal"
 
 	"gorm.io/gorm"
@@ -71,7 +70,7 @@ func NewDBRecorder(db *gorm.DB, gid gidservice.Service) *DBRecorder {
 //
 // Errors are logged but not propagated — audit failure must not block business operations.
 func (r *DBRecorder) Record(ctx context.Context, event Event) error {
-	id, err := common.NextID(ctx, r.gid)
+	id, err := gidservice.NextID(ctx, r.gid)
 	if err != nil {
 		slog.Error("audit: generate id", "error", err)
 		return err
@@ -94,7 +93,7 @@ func (r *DBRecorder) Record(ctx context.Context, event Event) error {
 // Errors are logged but not propagated — callers in the failure path still
 // need their original error, not the audit write error.
 func (r *DBRecorder) RecordInTx(ctx context.Context, tx *gorm.DB, event Event) error {
-	id, err := common.NextID(ctx, r.gid)
+	id, err := gidservice.NextID(ctx, r.gid)
 	if err != nil {
 		slog.Error("audit: generate id (in tx)", "error", err)
 		return err

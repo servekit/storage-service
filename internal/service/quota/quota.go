@@ -12,7 +12,6 @@ import (
 	gidservice "github.com/servekit/gid-service/pkg"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/service/audit"
-	"github.com/servekit/storage-service/internal/service/common"
 	"github.com/servekit/storage-service/internal/service/conv"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
@@ -280,7 +279,7 @@ func (s *Service) ensureQuota(ctx context.Context, ownerType int32, ownerID int6
 		return quota, nil
 	}
 
-	id, gidErr := common.NextID(ctx, s.gid)
+	id, gidErr := gidservice.NextID(ctx, s.gid)
 	if gidErr != nil {
 		return nil, fmt.Errorf("generate quota id: %w", gidErr)
 	}
