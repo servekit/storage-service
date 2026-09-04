@@ -3,6 +3,7 @@ package pkg
 import (
 	"fmt"
 
+	"github.com/servekit/go-common/configx"
 	"github.com/servekit/go-common/lifecycle"
 
 	"github.com/servekit/storage-service/pkg/config"
@@ -18,7 +19,7 @@ var moduleClaim lifecycle.ModuleClaim
 // resource injection for module mode — shared db/redis via WithDB/WithRedis,
 // a shared gid-service Handler via WithGIDHandler.
 type ConnectConfig struct {
-	Mode   string          // "grpc" | "module" ("" = module)
+	Mode   configx.Mode    // "grpc" | "module" ("" = module)
 	Target string          // grpc dial target; required when Mode=grpc
 	Config *config.Config  // module-mode config; required when Mode=module
 	Opts   []option.Option // module-mode resource injection (WithDB/WithRedis/WithGIDHandler)
@@ -35,7 +36,7 @@ type ConnectConfig struct {
 // composition can share this instance downstream.
 func Connect(cfg ConnectConfig, mgr *lifecycle.Manager) (Service, *Handler, error) {
 	switch cfg.Mode {
-	case "grpc":
+	case configx.ModeGRPC:
 		if cfg.Target == "" {
 			return nil, nil, fmt.Errorf("storage-service: target required when mode=grpc")
 		}
@@ -45,7 +46,7 @@ func Connect(cfg ConnectConfig, mgr *lifecycle.Manager) (Service, *Handler, erro
 		}
 		mgr.AddStopper("storage-service", lifecycle.StopFunc(func() { _ = c.Close() }))
 		return c, nil, nil
-	case "module", "":
+	case configx.ModeModule, configx.ModeUnspecified:
 		if cfg.Config == nil {
 			return nil, nil, fmt.Errorf("storage-service: module config required")
 		}

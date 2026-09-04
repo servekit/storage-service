@@ -41,15 +41,9 @@ type ThirdPartyConfig struct {
 	GID *RemoteServiceConfig[*gidconfig.Config]
 }
 
-// RemoteServiceConfig holds connection settings for a service that can run
-// in-process (module) or as a remote gRPC deployment. T is the full config
-// used in module mode. Mode has no default — Validate below decides how to
-// treat an empty value.
-type RemoteServiceConfig[T any] struct {
-	Mode   string // "module" | "grpc"
-	Target string // gRPC addr, e.g. "localhost:19091"
-	Config T      // module-mode config
-}
+// RemoteServiceConfig is the shared third_party.<name> section shape,
+// aliased from go-common so Mode is the configx.Mode enum.
+type RemoteServiceConfig[T any] = configx.RemoteServiceConfig[T]
 
 // ServerConfig holds gRPC and HTTP server addresses.
 type ServerConfig struct {
