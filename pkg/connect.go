@@ -9,6 +9,9 @@ import (
 	"github.com/servekit/storage-service/pkg/option"
 )
 
+// moduleClaim enforces one live module instance per process for Connect.
+var moduleClaim lifecycle.ModuleClaim
+
 // ConnectConfig describes how to connect to storage-service. Mode selects the
 // backend: "grpc" dials Target with the server-shaped *Client, "module" (the
 // default when empty) builds an in-process Handler from Config. Opts carries
@@ -46,11 +49,15 @@ func Connect(cfg ConnectConfig, mgr *lifecycle.Manager) (Service, *Handler, erro
 		if cfg.Config == nil {
 			return nil, nil, fmt.Errorf("storage-service: module config required")
 		}
+		if err := moduleClaim.Claim("storage-service"); err != nil {
+			return nil, nil, err
+		}
 		hdl, err := NewModule(cfg.Config, cfg.Opts...)
 		if err != nil {
+			moduleClaim.Release() // construction failed; free the slot
 			return nil, nil, fmt.Errorf("storage-service: %w", err)
 		}
-		mgr.Add("storage-service", hdl)
+		mgr.Add("storage-service", moduleClaim.Wrap(hdl))
 		return hdl, hdl, nil
 	default:
 		return nil, nil, fmt.Errorf("storage-service: unknown mode %q (want \"grpc\" or \"module\")", cfg.Mode)
