@@ -9,7 +9,7 @@ import (
 
 	"github.com/servekit/go-common/dbx"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/store/models"

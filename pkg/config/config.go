@@ -45,18 +45,17 @@ type ThirdPartyConfig struct {
 // aliased from go-common so Mode is the configx.Mode enum.
 type RemoteServiceConfig[T any] = configx.RemoteServiceConfig[T]
 
-// ServerConfig holds gRPC and HTTP server addresses.
+// ServerConfig holds the gRPC server address.
 type ServerConfig struct {
 	GRPCAddr string `default:":19093"`
-	HTTPAddr string `default:":18083"`
 }
 
 // StorageConfig holds storage backend settings including providers and their buckets.
 type StorageConfig struct {
-	UploadTokenTTL time.Duration `default:"30m"`
-	UploadTokenSecret     string
-	DefaultQuotaBytes     int64 `default:"10737418240"` // 10GB
-	DefaultBucket         string
+	UploadTokenTTL    time.Duration `default:"30m"`
+	UploadTokenSecret string
+	DefaultQuotaBytes int64 `default:"10737418240"` // 10GB
+	DefaultBucket     string
 	// PublicBucket is the bucket used for visibility=PUBLIC uploads (avatar /
 	// cover style public resources). It must be configured public-read (or
 	// fronted by a CDN); empty = PUBLIC uploads are rejected.
@@ -72,11 +71,11 @@ type StorageConfig struct {
 	// MaxUploadBytes is the hard single-file size ceiling enforced at upload
 	// URL / STS issue time. Larger needs belong on the link (object-storage
 	// reference) channel, not inline uploads.
-	MaxUploadBytes int64 `default:"1073741824"` // 1GB
-	RateLimit      *ratelimit.Config
-	Providers      []*ProviderConfig
-	STS            *STSConfig
-	UploadGC       *UploadGCConfig
+	MaxUploadBytes  int64 `default:"1073741824"` // 1GB
+	RateLimit       *ratelimit.Config
+	Providers       []*ProviderConfig
+	STS             *STSConfig
+	UploadGC        *UploadGCConfig
 	FileRetentionGC *FileRetentionGCConfig
 	Batch           *BatchConfig
 	Cron            *CronConfig

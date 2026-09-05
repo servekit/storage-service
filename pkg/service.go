@@ -1,7 +1,7 @@
 package pkg
 
 import (
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 )
 
 // Service is how a consumer holds storage-service regardless of backend: the

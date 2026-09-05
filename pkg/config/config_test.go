@@ -16,7 +16,6 @@ import (
 const testConfigYAML = `
 server:
   grpc_addr: ":9090"
-  http_addr: ":8081"
 
 database:
   driver: postgres
@@ -80,9 +79,6 @@ func TestLoadFromFile(t *testing.T) {
 	// Verify server section.
 	if cfg.Server.GRPCAddr != ":9090" {
 		t.Errorf("Server.GRPCAddr = %q, want %q", cfg.Server.GRPCAddr, ":9090")
-	}
-	if cfg.Server.HTTPAddr != ":8081" {
-		t.Errorf("Server.HTTPAddr = %q, want %q", cfg.Server.HTTPAddr, ":8081")
 	}
 
 	// Verify database section.
@@ -180,9 +176,6 @@ third_party:
 	if cfg.Server.GRPCAddr != ":19093" {
 		t.Errorf("Server.GRPCAddr = %q, want default %q", cfg.Server.GRPCAddr, ":19093")
 	}
-	if cfg.Server.HTTPAddr != ":18083" {
-		t.Errorf("Server.HTTPAddr = %q, want default %q", cfg.Server.HTTPAddr, ":18083")
-	}
 
 	// Verify storage defaults.
 	if cfg.Storage.UploadTokenTTL != 30*time.Minute {
@@ -241,9 +234,6 @@ func TestEnvOverride(t *testing.T) {
 	// Verify env overrides take effect.
 	if cfg.Server.GRPCAddr != ":5000" {
 		t.Errorf("Server.GRPCAddr = %q, want %q (env override)", cfg.Server.GRPCAddr, ":5000")
-	}
-	if cfg.Server.HTTPAddr != ":6000" {
-		t.Errorf("Server.HTTPAddr = %q, want %q (env override)", cfg.Server.HTTPAddr, ":6000")
 	}
 	if cfg.Storage.UploadTokenTTL != 10*time.Minute {
 		t.Errorf("Storage.UploadTokenTTL = %v, want %v (env override)", cfg.Storage.UploadTokenTTL, 10*time.Minute)

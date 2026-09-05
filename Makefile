@@ -47,10 +47,6 @@ vet:
 generate:
 	gorm gen -i ./internal/store/models -o ./internal/store/generated
 
-## proto: Generate protobuf code with buf
-proto:
-	buf generate
-
 ## migrate: Run database migrations (AutoMigrate) via the unified binary
 migrate:
 	@test -f config.yaml || cp config.example.yaml config.yaml

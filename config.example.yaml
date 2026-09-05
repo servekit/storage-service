@@ -1,6 +1,5 @@
 server:
   grpc_addr: ${STORAGE_SERVICE_SERVER_GRPC_ADDR}
-  http_addr: ${STORAGE_SERVICE_SERVER_HTTP_ADDR}
 
 database:
   driver: ${STORAGE_SERVICE_DB_DRIVER}        # postgres | mysql | sqlite(空默认 postgres)

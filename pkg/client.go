@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	commonv1 "github.com/servekit/api/gen/go/common/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -51,7 +52,7 @@ func (c *Client) Close() error {
 }
 
 // Ping delegates to the remote storage-service.
-func (c *Client) Ping(ctx context.Context, in *emptypb.Empty) (*storagev1.Pong, error) {
+func (c *Client) Ping(ctx context.Context, in *emptypb.Empty) (*commonv1.Pong, error) {
 	return c.cli.Ping(ctx, in)
 }
 

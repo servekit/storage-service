@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	"github.com/servekit/storage-service/internal/store/models"
 
 	"github.com/stretchr/testify/assert"

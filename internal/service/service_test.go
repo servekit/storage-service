@@ -16,9 +16,9 @@ import (
 	"github.com/servekit/go-common/lifecycle"
 	"github.com/servekit/go-common/redisx"
 
-	gidv1 "github.com/servekit/gid-service/gen/gid/v1"
+	gidv1 "github.com/servekit/api/gen/go/gid/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/provider/storage/types"

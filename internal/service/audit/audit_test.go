@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	gidv1 "github.com/servekit/gid-service/gen/gid/v1"
+	gidv1 "github.com/servekit/api/gen/go/gid/v1"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 
 	"github.com/stretchr/testify/assert"
 )

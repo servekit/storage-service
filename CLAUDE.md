@@ -34,8 +34,8 @@
 ### gRPC / Proto
 
 - Proto 定义在 `api/proto/storage/`
-- 使用 `protoc` + `grpc-gateway` 生成代码到 `gen/` 目录
-- gRPC server 监听 `:9000`，grpc-gateway 监听 `:8080`
+- 使用 `buf` 生成代码到 `gen/` 目录（protoc-gen-go + protoc-gen-go-grpc）；纯 gRPC 服务：proto 不带 `google.api.http` 注解，不生成 gateway/swagger
+- gRPC server 监听 `:19093`；不监听 HTTP（对外 HTTP 面由网关 testkit-service 提供）
 
 ### 错误处理
 
@@ -96,8 +96,6 @@ go test -race -coverprofile=coverage.out ./...
 
 ```
 storage-service/
-├── api/proto/storage/       # Protobuf 定义
-├── api/swagger/             # buf 生成的 OpenAPI/Swagger 2.0 文档（由 buf.gen.yaml 的 openapiv2 插件产出，供前端/客户端消费）
 ├── cmd/server/              # 启动入口：serve（默认）+ migrate 子命令（单二进制）
 ├── gen/                     # protoc 生成代码
 ├── internal/

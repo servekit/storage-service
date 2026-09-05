@@ -5,11 +5,12 @@ import (
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	commonv1 "github.com/servekit/api/gen/go/common/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 )
 
 // Ping is a health-check RPC.
-func (h *Handler) Ping(ctx context.Context, _ *emptypb.Empty) (*storagev1.Pong, error) {
+func (h *Handler) Ping(ctx context.Context, _ *emptypb.Empty) (*commonv1.Pong, error) {
 	return h.svc.Ping(ctx)
 }
 

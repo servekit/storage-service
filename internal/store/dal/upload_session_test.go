@@ -9,7 +9,7 @@ import (
 	"github.com/servekit/go-common/dbx"
 	"gorm.io/gorm"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	"github.com/servekit/storage-service/internal/store/models"
 	"github.com/servekit/storage-service/pkg/xcodes"
 )

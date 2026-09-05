@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	"github.com/servekit/go-common/jsonx"
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 	"github.com/servekit/storage-service/pkg/xcodes"
 )

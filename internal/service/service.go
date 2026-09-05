@@ -24,7 +24,8 @@ import (
 	"github.com/servekit/go-common/lifecycle"
 	"github.com/servekit/go-common/ratelimit"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	commonv1 "github.com/servekit/api/gen/go/common/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -189,9 +190,9 @@ func (s *StorageService) Stop() error {
 }
 
 // Ping is a health-check RPC. Returns only public, non-sensitive info.
-func (s *StorageService) Ping(ctx context.Context) (*storagev1.Pong, error) {
+func (s *StorageService) Ping(ctx context.Context) (*commonv1.Pong, error) {
 	v := version.Get()
-	return &storagev1.Pong{
+	return &commonv1.Pong{
 		Service:   "storage-service",
 		Version:   v.Version,
 		GitCommit: v.GitCommit,

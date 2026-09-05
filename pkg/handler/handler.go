@@ -4,7 +4,7 @@
 package handler
 
 import (
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	"github.com/servekit/storage-service/internal/service"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/option"

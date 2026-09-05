@@ -6,8 +6,9 @@ import (
 	"reflect"
 	"testing"
 
+	commonv1 "github.com/servekit/api/gen/go/common/v1"
+	pb "github.com/servekit/api/gen/go/storage/v1"
 	"github.com/servekit/go-common/grpcx/clienttest"
-	pb "github.com/servekit/storage-service/gen/storage/v1"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -21,8 +22,8 @@ type smokeStub struct {
 	pb.UnimplementedStorageServiceServer
 }
 
-func (smokeStub) Ping(context.Context, *emptypb.Empty) (*pb.Pong, error) {
-	return &pb.Pong{Status: "SERVING"}, nil
+func (smokeStub) Ping(context.Context, *emptypb.Empty) (*commonv1.Pong, error) {
+	return &commonv1.Pong{Status: "SERVING"}, nil
 }
 
 // TestClient_GRPCRoundTrip drives the server-shaped *Client against a real

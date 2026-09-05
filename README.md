@@ -20,8 +20,8 @@
 | 层 | 选型 |
 |---|---|
 | 语言 | Go 1.26 |
-| RPC | gRPC + grpc-gateway（HTTP/JSON） |
-| 协议 | Protobuf（[buf](api/proto/storage/v1) + protovalidate） |
+| RPC | gRPC（纯 gRPC 服务，不监听 HTTP；HTTP 面由网关 testkit-service 提供） |
+| 协议 | Protobuf（契约仓库 [../api](../api) + protovalidate） |
 | 数据库 | PostgreSQL（GORM，无外键，应用层保证关系完整性） |
 | 缓存/锁 | Redis（限流、分布式锁、STS 凭证缓存） |
 | 配置 | Viper（`go-common/configx`） |
@@ -46,7 +46,7 @@
 
 ### Go 关键依赖
 
-见 [`go.mod`](go.mod)。核心：`grpc`、`grpc-gateway`、`gorm`、`redis/go-redis`、`spf13/viper`、各云厂商 SDK、`buf`/`protovalidate`。
+见 [`go.mod`](go.mod)。核心：`grpc`、`gorm`、`redis/go-redis`、`spf13/viper`、各云厂商 SDK、`buf`/`protovalidate`。
 
 ## 快速开始（本地）
 
@@ -76,7 +76,6 @@ make run            # 等价于 go run ./cmd/server/
 ```
 
 - gRPC：`:19093`
-- HTTP gateway：`:18083`
 
 ## 配置
 
@@ -98,7 +97,7 @@ make run            # 等价于 go run ./cmd/server/
 
 | 段 | 说明 |
 |---|---|
-| `server` | gRPC / gateway 监听地址 |
+| `server` | gRPC 监听地址 |
 | `database` | PostgreSQL 连接（host/port/user/password/dbname/连接池/table_prefix） |
 | `redis` | Redis 连接 |
 | `storage.providers` | 对象存储供应商与账号（见下） |
@@ -152,7 +151,7 @@ ALIYUN_BACKUP_SK=...
 - 位于已做鉴权的 API 网关 / service mesh / sidecar 之后
 - 作为 Go 模块嵌入宿主进程，由宿主实施鉴权
 
-在 `pkg.NewServer` 增加 auth 拦截器之前，**不要**将 `:19093`（gRPC）或 `:18083`（gateway）直接暴露到不可信网络。
+在 `pkg.NewServer` 增加 auth 拦截器之前，**不要**将 `:19093`（gRPC）直接暴露到不可信网络。
 
 ### 二进制部署
 
@@ -188,7 +187,6 @@ services:
       - ./config.yaml:/etc/storage-service/config.yaml:ro
     ports:
       - "19093:19093"
-      - "18083:18083"
     depends_on:
       - postgres
       - redis
@@ -208,11 +206,10 @@ docker compose up -d storage-service         # 启动服务
 | 端口 | 协议 | 用途 |
 |---|---|---|
 | 19093 | gRPC | 主 RPC 入口 |
-| 18083 | HTTP | grpc-gateway（REST/JSON） |
 
 ## API
 
-gRPC service：`storagev1.StorageService`，proto 定义见 [`api/proto/storage/v1`](api/proto/storage/v1)。
+gRPC service：`storagev1.StorageService`，proto 定义见契约仓库 `../api/storage/v1/`。
 
 | 分类 | RPC |
 |---|---|
@@ -224,12 +221,10 @@ gRPC service：`storagev1.StorageService`，proto 定义见 [`api/proto/storage/
 | 管理 | `AdminListFiles`、`AdminGetFile`、`AdminDeleteFile`、`AdminGetQuota`、`AdminSetQuota`、`AdminGetStats`、`AdminListProviders`、`AdminListBuckets`、`AdminSoftDeleteOwnerFiles`、`AdminDeleteOwner` |
 | 审计 | `ListMyAuditLogs`、`AdminListAuditLogs` |
 
-通过 gateway 访问示例：`http://localhost:18083/v1/files`、`http://localhost:18083/v1/admin/stats`（REST 端点对应 proto 的 `google.api.http` 注解）。
 
 ## 开发
 
 ```bash
-make proto       # buf generate —— 生成 gRPC/gateway/protovalidate 代码到 gen/
 make generate    # gorm gen —— 生成 internal/store/generated
 make test        # 带竞态检测的测试
 make all         # fmt + vet + lint + test
@@ -242,7 +237,6 @@ make tidy        # go mod tidy
 
 ```
 storage-service/
-├── api/proto/storage/    # Protobuf 定义
 ├── cmd/
 │   └── server/           # 启动入口：serve（默认）+ migrate 子命令（单二进制）
 ├── gen/                  # protoc/buf 生成代码

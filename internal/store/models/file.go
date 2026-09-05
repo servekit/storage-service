@@ -11,15 +11,15 @@ import (
 
 // StorageFile represents a file mapping to a physical storage object.
 type StorageFile struct {
-	ID          int64          `gorm:"primaryKey" json:"id"`
-	OwnerType   int32          `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_files_owner" json:"owner_type"`
-	OwnerID     int64          `gorm:"column:owner_id;not null;index:idx_files_owner" json:"owner_id"`
-	ObjectID    int64          `gorm:"column:object_id;not null;index:idx_files_object_id" json:"object_id"`
-	Filename    string         `gorm:"column:filename;type:varchar(256);not null" json:"filename"`
-	FilePath    string         `gorm:"column:file_path;type:varchar(512)" json:"file_path,omitempty"`
-	Description string         `gorm:"column:description;type:text" json:"description,omitempty"`
-	Metadata    MapJSON        `gorm:"column:metadata;type:json" json:"metadata,omitempty"`
-	IsPublic    bool           `gorm:"column:is_public;not null;default:false" json:"is_public"`
+	ID          int64   `gorm:"primaryKey" json:"id"`
+	OwnerType   int32   `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_files_owner" json:"owner_type"`
+	OwnerID     int64   `gorm:"column:owner_id;not null;index:idx_files_owner" json:"owner_id"`
+	ObjectID    int64   `gorm:"column:object_id;not null;index:idx_files_object_id" json:"object_id"`
+	Filename    string  `gorm:"column:filename;type:varchar(256);not null" json:"filename"`
+	FilePath    string  `gorm:"column:file_path;type:varchar(512)" json:"file_path,omitempty"`
+	Description string  `gorm:"column:description;type:text" json:"description,omitempty"`
+	Metadata    MapJSON `gorm:"column:metadata;type:json" json:"metadata,omitempty"`
+	IsPublic    bool    `gorm:"column:is_public;not null;default:false" json:"is_public"`
 
 	// RetainUntil schedules retention-based expiry (NULL = permanent). The
 	// link download path rejects the file from this moment on; the retention

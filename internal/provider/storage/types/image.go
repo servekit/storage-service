@@ -1,6 +1,6 @@
 package types
 
-import storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+import storagev1 "github.com/servekit/api/gen/go/storage/v1"
 
 // OpType defines the type of image operation. Vendor-agnostic — each provider
 // translates []Op into its native syntax inside PresignGetObject.

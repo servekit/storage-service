@@ -10,7 +10,7 @@ import (
 	"github.com/servekit/go-common/signalx"
 	"google.golang.org/grpc"
 
-	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	"github.com/servekit/storage-service/internal/service"
 	"github.com/servekit/storage-service/pkg/config"
 	"github.com/servekit/storage-service/pkg/handler"
@@ -51,7 +51,7 @@ func WithServiceOptions(opts ...option.Option) ServerOption {
 // This is acceptable ONLY when the service sits behind a trusted boundary
 // that performs authentication (API gateway, service mesh, sidecar) or when
 // it is linked into a host process as a Go module and the host enforces
-// auth. Exposing :19093 (gRPC) or :18083 (gateway) directly to untrusted
+// auth. Exposing :19093 (gRPC) directly to untrusted
 // networks lets any caller delete owners, read all files, or change quotas.
 // Add an auth interceptor here before deploying outside a trusted boundary.
 func NewServer(cfg *config.Config, opts ...ServerOption) (*Server, error) {
@@ -72,14 +72,11 @@ func NewServer(cfg *config.Config, opts ...ServerOption) (*Server, error) {
 	}
 
 	grpcSrv := grpcx.New(
-		&grpcx.ServerConfig{
-			GRPCAddr:    cfg.Server.GRPCAddr,
-			GatewayAddr: cfg.Server.HTTPAddr,
-		},
+		&grpcx.ServerConfig{GRPCAddr: cfg.Server.GRPCAddr},
 		func(gs *grpc.Server) {
 			storagev1.RegisterStorageServiceServer(gs, hdl)
 		},
-		storagev1.RegisterStorageServiceHandlerFromEndpoint,
+		nil, // no HTTP gateway — gRPC-only service
 		grpcx.ErrorInterceptor,
 		protovalidate_middleware.UnaryServerInterceptor(validator),
 	)

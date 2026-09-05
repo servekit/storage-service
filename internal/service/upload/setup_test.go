@@ -9,7 +9,7 @@ import (
 	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/redisx"
 
-	gidv1 "github.com/servekit/gid-service/gen/gid/v1"
+	gidv1 "github.com/servekit/api/gen/go/gid/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
