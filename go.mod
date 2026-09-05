@@ -1,8 +1,7 @@
 module github.com/servekit/storage-service
 
-go 1.26.1
+go 1.26.6
 
-toolchain go1.26.6
 
 require (
 	buf.build/go/protovalidate v1.2.0

@@ -5,7 +5,7 @@
 # host-native executable into the image.
 #
 # Substitutions:
-#   1.26.1         exact Go toolchain version inferred from go.mod
+#   1.26.6         exact Go toolchain version inferred from go.mod
 #   ghcr.io/grpc-ecosystem/grpc-health-probe:v0.4.53 image supplying the grpc_health_probe binary
 #   alpine:3.24      final runtime base image
 #   .         service directory relative to the Docker build context
@@ -16,7 +16,7 @@
 #   18083          optional grpc-gateway listen port
 #   config.example.yaml      non-secret config template copied as /app/config.yaml
 
-ARG GO_VERSION=1.26.1
+ARG GO_VERSION=1.26.6
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS builder
 
 ARG TARGETPLATFORM
