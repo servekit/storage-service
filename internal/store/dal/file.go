@@ -260,7 +260,7 @@ func ListAllFiles(ctx context.Context, tx *gorm.DB, filter AdminListFilesFilter,
 	return files, int(total), nil
 }
 
-// applyFileOrder applies the ORDER BY clause shared by cursor and offset
+// applyFileOrder applies the ORDER BY clause linkd by cursor and offset
 // file-listing paths. The sort is always (sort_col, id) so pagination is
 // stable and row dedup is impossible.
 //
@@ -451,4 +451,98 @@ func FindFileOwnerObjectIDPairs(ctx context.Context, tx *gorm.DB) ([]models.Owne
 		return nil, xcodes.ErrInternal.Wrapf(err, "find owner object pairs")
 	}
 	return pairs, nil
+}
+
+// --- Link / retention GC ---
+
+// GetFileByLinkToken returns the active file holding the given link token.
+// gorm's soft-delete scope filters out user-deleted rows automatically.
+// Returns ErrFileNotFound when no active file carries the token.
+func GetFileByLinkToken(ctx context.Context, tx *gorm.DB, token string) (*models.StorageFile, error) {
+	f, err := gorm.G[models.StorageFile](tx).
+		Where(generated.StorageFile.LinkToken.Eq(token)).
+		Take(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, xcodes.ErrFileNotFound.New()
+		}
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	return &f, nil
+}
+
+// UpdateFileLink persists the link token and retention deadline for a file.
+// Both pointers may be nil to leave a value untouched. Raw gorm Updates: the
+// gen layer's Set/Update chaining does not compose for multi-column updates.
+func UpdateFileLink(ctx context.Context, tx *gorm.DB, id int64, linkToken *string, retainUntil *time.Time) error {
+	updates := map[string]any{}
+	if linkToken != nil {
+		updates["link_token"] = *linkToken
+	}
+	if retainUntil != nil {
+		updates["retain_until"] = *retainUntil
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	if err := tx.WithContext(ctx).Model(&models.StorageFile{}).
+		Where("id = ?", id).
+		Updates(updates).Error; err != nil {
+		return xcodes.ErrInternal.Wrapf(err, "update file link")
+	}
+	return nil
+}
+
+// FindRetentionDue returns active files whose retention deadline has passed
+// but which are not yet marked expired (GC soft-delete stage input).
+func FindRetentionDue(ctx context.Context, tx *gorm.DB, now time.Time, limit int) ([]models.StorageFile, error) {
+	rows, err := gorm.G[models.StorageFile](tx).
+		Where(generated.StorageFile.RetainUntil.Lt(now)).
+		Where(generated.StorageFile.ExpiredAt.IsNull()).
+		Limit(limit).
+		Find(ctx)
+	if err != nil {
+		return nil, xcodes.ErrInternal.Wrapf(err, "find retention due")
+	}
+	return rows, nil
+}
+
+// MarkFileExpired stamps the retention-GC soft-delete marker. Distinct from
+// the user-driven gorm DeletedAt: the row stays queryable by link token so
+// the download path can render an explicit "expired" answer. Guarded on
+// expired_at IS NULL so concurrent GC passes stay idempotent.
+func MarkFileExpired(ctx context.Context, tx *gorm.DB, id int64, at time.Time) error {
+	_, err := gorm.G[models.StorageFile](tx).
+		Where(generated.StorageFile.ID.Eq(id)).
+		Where(generated.StorageFile.ExpiredAt.IsNull()).
+		Set(generated.StorageFile.ExpiredAt.Set(at)).
+		Update(ctx)
+	if err != nil {
+		return xcodes.ErrInternal.Wrapf(err, "mark file expired")
+	}
+	return nil
+}
+
+// FindPurgeDue returns files whose expiry marker is older than the cutoff
+// (GC hard-delete stage input).
+func FindPurgeDue(ctx context.Context, tx *gorm.DB, cutoff time.Time, limit int) ([]models.StorageFile, error) {
+	rows, err := gorm.G[models.StorageFile](tx).
+		Where(generated.StorageFile.ExpiredAt.Lt(cutoff)).
+		Limit(limit).
+		Find(ctx)
+	if err != nil {
+		return nil, xcodes.ErrInternal.Wrapf(err, "find purge due")
+	}
+	return rows, nil
+}
+
+// PurgeFile physically removes an expired file row. Object ref-count and
+// quota were already released when the file was marked expired, so this only
+// clears the tombstone. Raw gorm: the gen layer has no Unscoped escape hatch
+// and we explicitly want a hard DELETE here.
+func PurgeFile(ctx context.Context, tx *gorm.DB, id int64) error {
+	if err := tx.Unscoped().Delete(&models.StorageFile{}, id).Error; err != nil {
+		return xcodes.ErrInternal.Wrapf(err, "purge file")
+	}
+	return nil
 }

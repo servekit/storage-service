@@ -110,12 +110,13 @@ func New(cfg *config.Config, opts ...option.Option) (*StorageService, error) {
 	// URL generation). Depends on audit.Recorder and the quota Service via Deps
 	// injection so it never imports the parent service package.
 	fileSvc := file.New(&file.Deps{
-		DB:       db,
-		GID:      gidGen,
-		Registry: registry,
-		Audit:    auditSvc.Recorder(),
-		Quota:    quotaSvc,
-		CDN:      cfg.Storage.CDN,
+		DB:            db,
+		GID:           gidGen,
+		Registry:      registry,
+		Audit:         auditSvc.Recorder(),
+		Quota:         quotaSvc,
+		CDN:           cfg.Storage.CDN,
+		PresignMaxTTL: cfg.Storage.PresignMaxTTL,
 	})
 
 	// Admin subpackage: owns the 10 admin RPCs (cross-owner file/quota/stats/
@@ -302,6 +303,16 @@ func (s *StorageService) GenerateDownloadURL(ctx context.Context, req *storagev1
 	return s.file.GenerateDownloadURL(ctx, req)
 }
 
+// CreateFileLink delegates to the file subpackage.
+func (s *StorageService) CreateFileLink(ctx context.Context, req *storagev1.CreateFileLinkRequest) (*storagev1.CreateFileLinkResponse, error) {
+	return s.file.CreateFileLink(ctx, req)
+}
+
+// GetFileLinkDownload delegates to the file subpackage.
+func (s *StorageService) GetFileLinkDownload(ctx context.Context, req *storagev1.GetFileLinkDownloadRequest) (*storagev1.GetFileLinkDownloadResponse, error) {
+	return s.file.GetFileLinkDownload(ctx, req)
+}
+
 // ListMyFiles delegates to the file subpackage.
 func (s *StorageService) ListMyFiles(ctx context.Context, req *storagev1.ListMyFilesRequest) (*storagev1.ListMyFilesResponse, error) {
 	return s.file.ListMyFiles(ctx, req)
@@ -422,6 +433,19 @@ func (s *StorageService) setupJobs() error {
 		}
 	}); err != nil {
 		return fmt.Errorf("register upload reap: %w", err)
+	}
+
+	// Two-stage retention GC for linkd files: mark expired (quota +
+	// ref-count release), then purge tombstones after the recovery window.
+	if err := scheduler.AddFunc(s.cfg.Storage.FileRetentionGC.CronSpec, func() {
+		cfg := s.cfg.Storage.FileRetentionGC
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if _, err := s.file.ReapExpiredFiles(ctx, cfg.HardDeleteAfter, cfg.BatchSize); err != nil {
+			slog.Error("file retention reap", "error", err)
+		}
+	}); err != nil {
+		return fmt.Errorf("register file retention reap: %w", err)
 	}
 	return nil
 }

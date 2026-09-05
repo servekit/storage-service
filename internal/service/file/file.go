@@ -41,6 +41,8 @@ type Service struct {
 	audit    audit.Recorder
 	quota    *quota.Service
 	cdn      config.CDNRuntimeConfig
+	// presignMaxTTL caps caller-requested presign TTLs (0 = no cap).
+	presignMaxTTL time.Duration
 }
 
 // Deps is the dependency bundle injected by the parent service.
@@ -51,18 +53,35 @@ type Deps struct {
 	Audit    audit.Recorder
 	Quota    *quota.Service
 	CDN      config.CDNRuntimeConfig
+	// PresignMaxTTL caps GenerateDownloadURL / GenerateProcessURL TTLs.
+	PresignMaxTTL time.Duration
 }
 
 // New constructs a file.Service.
 func New(d *Deps) *Service {
 	return &Service{
-		db:       d.DB,
-		gid:      d.GID,
-		registry: d.Registry,
-		audit:    d.Audit,
-		quota:    d.Quota,
-		cdn:      d.CDN,
+		db:            d.DB,
+		gid:           d.GID,
+		registry:      d.Registry,
+		audit:         d.Audit,
+		quota:         d.Quota,
+		cdn:           d.CDN,
+		presignMaxTTL: d.PresignMaxTTL,
 	}
+}
+
+// clampPresignTTL resolves a caller-requested presign TTL: <=0 falls back to
+// the 15-minute default; anything above presignMaxTTL is clamped so callers
+// cannot mint near-permanent signed GET URLs (OSS v1 has no provider-side
+// ceiling) or trip provider hard limits (S3 rejects >7d with an opaque 500).
+func (s *Service) clampPresignTTL(ttl time.Duration) time.Duration {
+	if ttl <= 0 {
+		ttl = 15 * time.Minute
+	}
+	if s.presignMaxTTL > 0 && ttl > s.presignMaxTTL {
+		return s.presignMaxTTL
+	}
+	return ttl
 }
 
 // GenerateDownloadURL returns a pre-signed download URL for a file owned by
@@ -87,10 +106,7 @@ func (s *Service) GenerateDownloadURL(ctx context.Context, req *storagev1.Genera
 		return nil, xcodes.ErrProviderNotFound.Wrap(err)
 	}
 
-	ttl := time.Duration(req.GetTtlSeconds()) * time.Second
-	if ttl <= 0 {
-		ttl = 15 * time.Minute
-	}
+	ttl := s.clampPresignTTL(time.Duration(req.GetTtlSeconds()) * time.Second)
 
 	// Public objects live in public-read buckets and are reachable via an
 	// unsigned URL — no presign needed. The provider returns an unsigned URL
@@ -556,10 +572,7 @@ func (s *Service) GenerateProcessURL(ctx context.Context, req *storagev1.Generat
 		ops = append(ops, conv.ProtoToImageOp(op))
 	}
 
-	ttl := time.Duration(req.GetTtlSeconds()) * time.Second
-	if ttl <= 0 {
-		ttl = 15 * time.Minute
-	}
+	ttl := s.clampPresignTTL(time.Duration(req.GetTtlSeconds()) * time.Second)
 
 	processURL, err := p.PresignGetObject(ctx, obj.Bucket, obj.ObjectKey, ttl,
 		storage.WithImageOps(ops),

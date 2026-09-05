@@ -35,6 +35,12 @@ storage:
   soft_delete_retention: ${STORAGE_SERVICE_STORAGE_SOFT_DELETE_RETENTION}
   # 30 days
   deleted_owner_retention: ${STORAGE_SERVICE_STORAGE_DELETED_OWNER_RETENTION}
+  # 24h — cap on presigned download/process URL TTLs (near-permanent OSS v1
+  # signatures otherwise possible; S3 rejects >7d with an opaque 500)
+  presign_max_ttl: ${STORAGE_SERVICE_STORAGE_PRESIGN_MAX_TTL}
+  # 1GB — hard single-file ceiling at upload issue time; larger files belong
+  # on the link (object-storage reference) channel
+  max_upload_bytes: ${STORAGE_SERVICE_STORAGE_MAX_UPLOAD_BYTES}
 
   sts:
     default_ttl: ${STORAGE_SERVICE_STS_DEFAULT_TTL}

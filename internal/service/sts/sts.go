@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"strings"
 	"time"
@@ -148,7 +149,7 @@ func (s *Service) Get(ctx context.Context, ownerType int32, ownerID int64, vendo
 		return s.fetchAndCache(ctx, "", resolvedTTL, policy)
 	}
 
-	key := cacheKey(ownerType, ownerID, vendor, bucket)
+	key := cacheKey(ownerType, ownerID, vendor, bucket, policy)
 
 	// Fast path: cache hit.
 	if cached, err := s.read(ctx, key); err == nil && cached != nil {
@@ -283,8 +284,32 @@ func (s *Service) write(ctx context.Context, key string, creds *storage.STSCrede
 // at the registry level, but if that ever changes, vendor-scoped cache slots
 // prevent cross-vendor credential confusion.
 // bucket is DNS-safe per provider validation, so no escaping needed.
-func cacheKey(ownerType int32, ownerID int64, vendor int32, bucket string) string {
-	return fmt.Sprintf("sts:cache:%d:%d:%d:%s", ownerType, ownerID, vendor, bucket)
+// The policy fingerprint is part of the key so credentials cached under one
+// policy shape are never served to a caller asking for a different one
+// (extensions/size/TTL drift — previously "first issuer wins").
+func cacheKey(ownerType int32, ownerID int64, vendor int32, bucket string, policy *storage.STSPolicy) string {
+	return fmt.Sprintf("sts:cache:%d:%d:%d:%s:%x",
+		ownerType, ownerID, vendor, bucket, policyFingerprint(policy))
+}
+
+// policyFingerprint hashes the policy dimensions that change the issued
+// policy document. Owner/bucket are already in the cache key; extensions,
+// actions, TTL and the hardening flags shape what the cloud actually signs,
+// so they must partition the cache. MaxSize is deliberately excluded: no
+// provider maps it into the policy document (content-length is not
+// enforceable via STS), and keying on it would shard the cache per file
+// size, defeating credential reuse entirely.
+func policyFingerprint(p *storage.STSPolicy) uint64 {
+	h := fnv.New64a()
+	for _, s := range []string{
+		fmt.Sprintf("ext=%v", p.AllowedExtensions),
+		fmt.Sprintf("act=%v", p.AllowedActions),
+		fmt.Sprintf("ttl=%s", p.TTL.String()),
+		fmt.Sprintf("https=%t,acl=%t,deny=%t", p.EnforceHTTPS, p.LockObjectACL, p.DenyPutObjectACL),
+	} {
+		_, _ = h.Write([]byte(s))
+	}
+	return h.Sum64()
 }
 
 // lockTargetFromCacheKey derives the lock target from a cache key.

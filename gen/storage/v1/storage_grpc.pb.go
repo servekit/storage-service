@@ -27,6 +27,8 @@ const (
 	StorageService_ConfirmUpload_FullMethodName             = "/storage.v1.StorageService/ConfirmUpload"
 	StorageService_CancelUpload_FullMethodName              = "/storage.v1.StorageService/CancelUpload"
 	StorageService_GenerateDownloadURL_FullMethodName       = "/storage.v1.StorageService/GenerateDownloadURL"
+	StorageService_CreateFileLink_FullMethodName            = "/storage.v1.StorageService/CreateFileLink"
+	StorageService_GetFileLinkDownload_FullMethodName       = "/storage.v1.StorageService/GetFileLinkDownload"
 	StorageService_ListMyFiles_FullMethodName               = "/storage.v1.StorageService/ListMyFiles"
 	StorageService_ListMyFilesPaged_FullMethodName          = "/storage.v1.StorageService/ListMyFilesPaged"
 	StorageService_GetMyFile_FullMethodName                 = "/storage.v1.StorageService/GetMyFile"
@@ -63,8 +65,8 @@ type StorageServiceClient interface {
 	GenerateUploadURL(ctx context.Context, in *GenerateUploadURLRequest, opts ...grpc.CallOption) (*GenerateUploadURLResponse, error)
 	// GetSTSCredential returns STS temporary credentials for client-side upload.
 	GetSTSCredential(ctx context.Context, in *GetSTSCredentialRequest, opts ...grpc.CallOption) (*GetSTSCredentialResponse, error)
-	// BatchGetSTSCredential returns shared STS credentials plus per-file upload
-	// tokens / instant results for a batch of files. The shared STS credential
+	// BatchGetSTSCredential returns linkd STS credentials plus per-file upload
+	// tokens / instant results for a batch of files. The linkd STS credential
 	// is fetched once and reused across all files in the batch.
 	BatchGetSTSCredential(ctx context.Context, in *BatchGetSTSCredentialRequest, opts ...grpc.CallOption) (*BatchGetSTSCredentialResponse, error)
 	// ConfirmUpload confirms a file upload and creates the file record.
@@ -75,6 +77,18 @@ type StorageServiceClient interface {
 	CancelUpload(ctx context.Context, in *CancelUploadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// GenerateDownloadURL returns a pre-signed download URL.
 	GenerateDownloadURL(ctx context.Context, in *GenerateDownloadURLRequest, opts ...grpc.CallOption) (*GenerateDownloadURLResponse, error)
+	// CreateFileLink mints (or returns the existing) anonymous link token for
+	// a file. The token is the credential for GetFileLinkDownload — random,
+	// not derived from file_id, so renewing retention never invalidates links
+	// already embedded in emails or documents. Optionally resets the retention
+	// window (renewal).
+	CreateFileLink(ctx context.Context, in *CreateFileLinkRequest, opts ...grpc.CallOption) (*CreateFileLinkResponse, error)
+	// GetFileLinkDownload is the anonymous link-link backend: recipients hit
+	// it from links embedded in emails etc. Returns a freshly presigned
+	// short-TTL download URL plus the file summary, or expired=true once the
+	// retention window has closed (the link outlives the file only in that
+	// sense). No owner required — the token IS the credential.
+	GetFileLinkDownload(ctx context.Context, in *GetFileLinkDownloadRequest, opts ...grpc.CallOption) (*GetFileLinkDownloadResponse, error)
 	// ListMyFiles lists files owned by the calling user.
 	ListMyFiles(ctx context.Context, in *ListMyFilesRequest, opts ...grpc.CallOption) (*ListMyFilesResponse, error)
 	// ListMyFilesPaged lists files owned by the calling user with traditional
@@ -205,6 +219,26 @@ func (c *storageServiceClient) GenerateDownloadURL(ctx context.Context, in *Gene
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GenerateDownloadURLResponse)
 	err := c.cc.Invoke(ctx, StorageService_GenerateDownloadURL_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storageServiceClient) CreateFileLink(ctx context.Context, in *CreateFileLinkRequest, opts ...grpc.CallOption) (*CreateFileLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFileLinkResponse)
+	err := c.cc.Invoke(ctx, StorageService_CreateFileLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storageServiceClient) GetFileLinkDownload(ctx context.Context, in *GetFileLinkDownloadRequest, opts ...grpc.CallOption) (*GetFileLinkDownloadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFileLinkDownloadResponse)
+	err := c.cc.Invoke(ctx, StorageService_GetFileLinkDownload_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -452,8 +486,8 @@ type StorageServiceServer interface {
 	GenerateUploadURL(context.Context, *GenerateUploadURLRequest) (*GenerateUploadURLResponse, error)
 	// GetSTSCredential returns STS temporary credentials for client-side upload.
 	GetSTSCredential(context.Context, *GetSTSCredentialRequest) (*GetSTSCredentialResponse, error)
-	// BatchGetSTSCredential returns shared STS credentials plus per-file upload
-	// tokens / instant results for a batch of files. The shared STS credential
+	// BatchGetSTSCredential returns linkd STS credentials plus per-file upload
+	// tokens / instant results for a batch of files. The linkd STS credential
 	// is fetched once and reused across all files in the batch.
 	BatchGetSTSCredential(context.Context, *BatchGetSTSCredentialRequest) (*BatchGetSTSCredentialResponse, error)
 	// ConfirmUpload confirms a file upload and creates the file record.
@@ -464,6 +498,18 @@ type StorageServiceServer interface {
 	CancelUpload(context.Context, *CancelUploadRequest) (*emptypb.Empty, error)
 	// GenerateDownloadURL returns a pre-signed download URL.
 	GenerateDownloadURL(context.Context, *GenerateDownloadURLRequest) (*GenerateDownloadURLResponse, error)
+	// CreateFileLink mints (or returns the existing) anonymous link token for
+	// a file. The token is the credential for GetFileLinkDownload — random,
+	// not derived from file_id, so renewing retention never invalidates links
+	// already embedded in emails or documents. Optionally resets the retention
+	// window (renewal).
+	CreateFileLink(context.Context, *CreateFileLinkRequest) (*CreateFileLinkResponse, error)
+	// GetFileLinkDownload is the anonymous link-link backend: recipients hit
+	// it from links embedded in emails etc. Returns a freshly presigned
+	// short-TTL download URL plus the file summary, or expired=true once the
+	// retention window has closed (the link outlives the file only in that
+	// sense). No owner required — the token IS the credential.
+	GetFileLinkDownload(context.Context, *GetFileLinkDownloadRequest) (*GetFileLinkDownloadResponse, error)
 	// ListMyFiles lists files owned by the calling user.
 	ListMyFiles(context.Context, *ListMyFilesRequest) (*ListMyFilesResponse, error)
 	// ListMyFilesPaged lists files owned by the calling user with traditional
@@ -550,6 +596,12 @@ func (UnimplementedStorageServiceServer) CancelUpload(context.Context, *CancelUp
 }
 func (UnimplementedStorageServiceServer) GenerateDownloadURL(context.Context, *GenerateDownloadURLRequest) (*GenerateDownloadURLResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GenerateDownloadURL not implemented")
+}
+func (UnimplementedStorageServiceServer) CreateFileLink(context.Context, *CreateFileLinkRequest) (*CreateFileLinkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateFileLink not implemented")
+}
+func (UnimplementedStorageServiceServer) GetFileLinkDownload(context.Context, *GetFileLinkDownloadRequest) (*GetFileLinkDownloadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileLinkDownload not implemented")
 }
 func (UnimplementedStorageServiceServer) ListMyFiles(context.Context, *ListMyFilesRequest) (*ListMyFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMyFiles not implemented")
@@ -763,6 +815,42 @@ func _StorageService_GenerateDownloadURL_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StorageServiceServer).GenerateDownloadURL(ctx, req.(*GenerateDownloadURLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StorageService_CreateFileLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFileLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StorageServiceServer).CreateFileLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StorageService_CreateFileLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StorageServiceServer).CreateFileLink(ctx, req.(*CreateFileLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StorageService_GetFileLinkDownload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFileLinkDownloadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StorageServiceServer).GetFileLinkDownload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StorageService_GetFileLinkDownload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StorageServiceServer).GetFileLinkDownload(ctx, req.(*GetFileLinkDownloadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1215,6 +1303,14 @@ var StorageService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GenerateDownloadURL",
 			Handler:    _StorageService_GenerateDownloadURL_Handler,
+		},
+		{
+			MethodName: "CreateFileLink",
+			Handler:    _StorageService_CreateFileLink_Handler,
+		},
+		{
+			MethodName: "GetFileLinkDownload",
+			Handler:    _StorageService_GetFileLinkDownload_Handler,
 		},
 		{
 			MethodName: "ListMyFiles",

@@ -155,9 +155,25 @@ func (p *S3Provider) HeadObject(ctx context.Context, bucket, key string) (*types
 		LastModified: aws.ToTime(out.LastModified),
 	}
 	// S3 HeadObject does not return the object ACL — that requires a separate
-	// GetObjectAcl API call we deliberately avoid here (latency + permission
-	// surface). ObjectACL stays empty; consumers must not treat empty as
-	// "private".
+	// GetObjectAcl API call. ConfirmUpload's ACL re-check depends on it (it
+	// rejects public-read objects landing in private buckets), so we do the
+	// extra call; on failure ObjectACL stays empty and the consumer-side rule
+	// applies (empty must be treated as "unknown", not "private").
+	aclOut, aclErr := p.client.GetObjectAcl(ctx, &awss3.GetObjectAclInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if aclErr == nil && aclOut.Grants != nil {
+		for _, g := range aclOut.Grants {
+			if string(g.Permission) == "READ" &&
+				g.Grantee != nil &&
+				string(g.Grantee.Type) == "Group" &&
+				strings.Contains(aws.ToString(g.Grantee.URI), "Global/AllUsers") {
+				info.ObjectACL = "public-read"
+				break
+			}
+		}
+	}
 	return info, nil
 }
 

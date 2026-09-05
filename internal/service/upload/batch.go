@@ -24,7 +24,10 @@ import (
 func (s *Service) BatchGetSTSCredential(ctx context.Context, req *storagev1.BatchGetSTSCredentialRequest) (*storagev1.BatchGetSTSCredentialResponse, error) {
 	ownerType := int32(req.GetOwner().GetOwnerType())
 	ownerID := req.GetOwner().GetOwnerId()
-	bucket := conv.ResolveBucket(req.GetBucket(), s.cfg.Storage.DefaultBucket)
+	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.cfg.Storage.DefaultBucket, s.cfg.Storage.PublicBucket, req.GetVisibility())
+	if err != nil {
+		return nil, err
+	}
 	ttl := req.GetTtl().AsDuration()
 
 	if n := len(req.GetFiles()); n == 0 {
@@ -86,7 +89,15 @@ func (s *Service) BatchGetSTSCredential(ctx context.Context, req *storagev1.Batc
 		KeyPrefix:         bucketCfg.KeyPrefix,
 		AllowedExtensions: allowedExt,
 		AllowedActions:    []string{types.PutObjectActionForVendor(vendor)},
-		TTL:               ttl,
+		// Resolve TTL the same way the per-file path does (upload.go's
+		// issueUploadCredential), so this shared credential and the per-file
+		// ones land in the same STS cache slot (policy fingerprint includes
+		// TTL) and the batch costs exactly one issuer call.
+		TTL: s.sts.ResolveTTL(ttl),
+		// Hardening — mirror the single-file STS path (upload.go).
+		EnforceHTTPS:     true,
+		LockObjectACL:    true,
+		DenyPutObjectACL: true,
 	})
 	if err != nil {
 		return nil, xcodes.ErrInternal.Wrapf(err, "get shared STS")

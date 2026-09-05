@@ -20,9 +20,25 @@ type StorageFile struct {
 	Description string         `gorm:"column:description;type:text" json:"description,omitempty"`
 	Metadata    MapJSON        `gorm:"column:metadata;type:json" json:"metadata,omitempty"`
 	IsPublic    bool           `gorm:"column:is_public;not null;default:false" json:"is_public"`
-	DeletedAt   gorm.DeletedAt `gorm:"column:deleted_at;index:idx_files_owner;index:idx_files_owner_path" json:"deleted_at"`
-	CreatedAt   time.Time      `gorm:"column:created_at;not null;autoCreateTime" json:"created_at"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;not null;autoUpdateTime" json:"updated_at"`
+
+	// RetainUntil schedules retention-based expiry (NULL = permanent). The
+	// link download path rejects the file from this moment on; the retention
+	// GC later marks ExpiredAt and eventually purges the row.
+	RetainUntil *time.Time `gorm:"column:retain_until" json:"retain_until,omitempty"`
+
+	// LinkToken is the anonymous download credential embedded in link
+	// links (nil = never linkd). Random, not derived from file_id, so
+	// renewing RetainUntil never invalidates links already sent out.
+	LinkToken *string `gorm:"column:link_token;type:varchar(64);uniqueIndex" json:"link_token,omitempty"`
+
+	// ExpiredAt is the retention-GC soft-delete marker (distinct from the
+	// user-driven DeletedAt). While set, the object may still exist but is
+	// refused everywhere; the GC purges the row after the hard-delete delay.
+	ExpiredAt *time.Time `gorm:"column:expired_at" json:"expired_at,omitempty"`
+
+	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index:idx_files_owner;index:idx_files_owner_path" json:"deleted_at"`
+	CreatedAt time.Time      `gorm:"column:created_at;not null;autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time      `gorm:"column:updated_at;not null;autoUpdateTime" json:"updated_at"`
 }
 
 // MapJSON is a custom type for JSONB map fields.

@@ -6,7 +6,8 @@
   },
   "tags": [
     {
-      "name": "StorageService"
+      "name": "StorageService",
+      "description": "StorageService provides file storage, upload, download, and management capabilities."
     }
   ],
   "consumes": [
@@ -1009,6 +1010,46 @@
         ]
       }
     },
+    "/v1/files/{fileId}/links": {
+      "post": {
+        "summary": "CreateFileLink mints (or returns the existing) anonymous link token for\na file. The token is the credential for GetFileLinkDownload — random,\nnot derived from file_id, so renewing retention never invalidates links\nalready embedded in emails or documents. Optionally resets the retention\nwindow (renewal).",
+        "operationId": "CreateFileLink",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateFileLinkResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StorageServiceCreateFileLinkBody"
+            }
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
     "/v1/files/{fileId}:generateCdnUrl": {
       "post": {
         "summary": "GenerateCDNURL returns a CDN-fronted signed URL (with expiry) for an\nalready-uploaded file. Caller must own the file. If ops is non-empty,\nthe URL carries image-processing parameters (Aliyun x-oss-process);\nS3/CloudFront providers reject ops with CDN_IMAGE_PROCESSING_UNSUPPORTED.",
@@ -1262,6 +1303,37 @@
         ]
       }
     },
+    "/v1/links/{linkToken}/download": {
+      "get": {
+        "summary": "GetFileLinkDownload is the anonymous link-link backend: recipients hit\nit from links embedded in emails etc. Returns a freshly presigned\nshort-TTL download URL plus the file summary, or expired=true once the\nretention window has closed (the link outlives the file only in that\nsense). No owner required — the token IS the credential.",
+        "operationId": "GetFileLinkDownload",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetFileLinkDownloadResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "linkToken",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "StorageService"
+        ]
+      }
+    },
     "/v1/owners/{ownerType}/{ownerId}/quota": {
       "put": {
         "summary": "SetOwnerQuota overwrites an owner's total quota. Business-facing (e.g.\npay-service resetting quota after a plan change). For admin tools use\nAdminSetQuota.",
@@ -1452,7 +1524,7 @@
     },
     "/v1/sts:batch": {
       "post": {
-        "summary": "BatchGetSTSCredential returns shared STS credentials plus per-file upload\ntokens / instant results for a batch of files. The shared STS credential\nis fetched once and reused across all files in the batch.",
+        "summary": "BatchGetSTSCredential returns linkd STS credentials plus per-file upload\ntokens / instant results for a batch of files. The linkd STS credential\nis fetched once and reused across all files in the batch.",
         "operationId": "BatchGetSTSCredential",
         "responses": {
           "200": {
@@ -1618,6 +1690,22 @@
         "requestId": {
           "type": "string",
           "description": "request_id is optional. If set, recorded in audit logs for traceability."
+        }
+      }
+    },
+    "StorageServiceCreateFileLinkBody": {
+      "type": "object",
+      "properties": {
+        "retentionTtlSeconds": {
+          "type": "integer",
+          "format": "int32",
+          "description": "retention_ttl_seconds, when \u003e 0, resets retain_until = now + ttl\n(renewal — the link token itself never changes). 0 keeps the current\nvalue. A link can only be created on an active, unexpired file."
+        },
+        "owner": {
+          "$ref": "#/definitions/v1Owner"
+        },
+        "requestId": {
+          "type": "string"
         }
       }
     },
@@ -2110,7 +2198,11 @@
           "items": {
             "type": "string"
           },
-          "description": "allowed_extensions is batch-level (the whole batch shares one STS\ncredential); per-file restrictions would require one AssumeRole call per\nfile, defeating batch's round-trip savings."
+          "description": "allowed_extensions is batch-level (the whole batch links one STS\ncredential); per-file restrictions would require one AssumeRole call per\nfile, defeating batch's round-trip savings."
+        },
+        "visibility": {
+          "$ref": "#/definitions/v1Visibility",
+          "description": "visibility is batch-level — same semantics as\nGenerateUploadURLRequest.visibility, applied to every file in the batch."
         },
         "owner": {
           "$ref": "#/definitions/v1Owner"
@@ -2125,7 +2217,7 @@
       "properties": {
         "accessKey": {
           "type": "string",
-          "description": "Shared STS credential for the whole batch. All per-file uploads use the\nsame temporary credential; the client differentiates by upload_token."
+          "description": "Linkd STS credential for the whole batch. All per-file uploads use the\nsame temporary credential; the client differentiates by upload_token."
         },
         "secretKey": {
           "type": "string"
@@ -2246,6 +2338,20 @@
         }
       }
     },
+    "v1CreateFileLinkResponse": {
+      "type": "object",
+      "properties": {
+        "linkToken": {
+          "type": "string",
+          "description": "link_token is the anonymous credential for GetFileLinkDownload. Stable\nacross renewals; callers embed it in their own stable URL surface."
+        },
+        "retainUntil": {
+          "type": "string",
+          "format": "int64",
+          "description": "retain_until is the current retention deadline as unix seconds;\n0 = permanent."
+        }
+      }
+    },
     "v1GenerateCDNURLResponse": {
       "type": "object",
       "properties": {
@@ -2319,6 +2425,10 @@
           "$ref": "#/definitions/v1Vendor",
           "description": "vendor is optional. If set (non-UNSPECIFIED), the service validates that\nthe resolved bucket belongs to this vendor; mismatch returns\nBUCKET_VENDOR_MISMATCH. Leave UNSPECIFIED to skip the check (legacy behavior)."
         },
+        "visibility": {
+          "$ref": "#/definitions/v1Visibility",
+          "description": "visibility selects the audience class. PUBLIC overrides `bucket` with\nthe configured public bucket (both must belong to a compatible vendor\nwhen vendor is pinned); UNSPECIFIED/PRIVATE keep the bucket field in\ncharge."
+        },
         "owner": {
           "$ref": "#/definitions/v1Owner"
         },
@@ -2356,6 +2466,30 @@
           "additionalProperties": {
             "type": "string"
           }
+        }
+      }
+    },
+    "v1GetFileLinkDownloadResponse": {
+      "type": "object",
+      "properties": {
+        "expired": {
+          "type": "boolean",
+          "description": "expired = true means the retention window has closed (or the file was\nremoved): download_url is empty and callers should render an\n\"attachment expired\" page instead of redirecting."
+        },
+        "filename": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "downloadUrl": {
+          "type": "string",
+          "description": "download_url is a freshly presigned URL with a short TTL (minutes),\nminted per request — recipients' link clicks never depend on a stored\nsignature."
+        },
+        "retainUntil": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -2404,6 +2538,10 @@
             "type": "string"
           },
           "description": "allowed_extensions restricts which file suffixes the issued STS credential\nmay PUT. Each element must start with '.' (e.g. \".jpg\"). Enforced by OSS\nat PUT time (Resource wildcards in STS policy). Empty = no restriction.\nService normalizes to lowercase; \".JPG\" matches [\".jpg\"]."
+        },
+        "visibility": {
+          "$ref": "#/definitions/v1Visibility",
+          "description": "visibility selects the audience class — same semantics as\nGenerateUploadURLRequest.visibility."
         },
         "owner": {
           "$ref": "#/definitions/v1Owner"
@@ -2870,6 +3008,16 @@
       ],
       "default": "VENDOR_UNSPECIFIED",
       "description": "Vendor classifies storage backends (cloud storage providers)."
+    },
+    "v1Visibility": {
+      "type": "string",
+      "enum": [
+        "VISIBILITY_UNSPECIFIED",
+        "VISIBILITY_PUBLIC",
+        "VISIBILITY_PRIVATE"
+      ],
+      "default": "VISIBILITY_UNSPECIFIED",
+      "description": "Visibility declares the intended audience class of an upload (avatar /\ncover style \"public resource\" vs. default private). It maps to BUCKETS, not\nper-file ACLs: objects are content-addressed and deduplicated globally, so\na physical object cannot be public for one referencing file and private\nfor another — bucket-level visibility is the only coherent granularity.\nPUBLIC uploads land in the configured public bucket (public-read / CDN);\nPRIVATE (and UNSPECIFIED, for backward compatibility) keep today's\nbehavior: the requested bucket, or the default bucket when unset."
     }
   }
 }

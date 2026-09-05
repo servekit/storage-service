@@ -201,7 +201,10 @@ func (s *Service) GenerateUploadURL(ctx context.Context, req *storagev1.Generate
 		return nil, xcodes.ErrQuotaExceeded.Wrap(checkErr)
 	}
 
-	bucket := conv.ResolveBucket(req.GetBucket(), s.cfg.Storage.DefaultBucket)
+	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.cfg.Storage.DefaultBucket, s.cfg.Storage.PublicBucket, req.GetVisibility())
+	if err != nil {
+		return nil, err
+	}
 
 	// Optional vendor check: if the caller pinned a vendor, the resolved bucket
 	// must belong to it. UNSPECIFIED = skip (legacy behavior).
@@ -410,9 +413,12 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 	// the session is private (IsPublic=false) but the cloud reports the object
 	// as public-read or public-read-write, the upload bypassed our policy —
 	// reject rather than persist a publicly-readable StorageObject. Empty ACL
-	// (provider didn't surface it) is allowed: we can't verify, and S3 will
-	// almost always hit this branch. "default" is also allowed since it means
-	// the object inherits the bucket default, which we trust at config time.
+	// (provider didn't surface it) is allowed: we can't verify what the cloud
+	// didn't report. "default" is also allowed since it means the object
+	// inherits the bucket default, which we trust at config time. The S3
+	// provider fills ObjectACL via GetObjectAcl, so this check is live there;
+	// the STS hardening flags (LockObjectACL/DenyPutObjectACL) prevent the
+	// violation from occurring in the first place on STS uploads.
 	if !confirmIsPublic && isPublicACL(info.ObjectACL) {
 		return nil, xcodes.ErrObjectACLViolation.New(fmt.Sprintf(
 			"session is private but object has ACL %q", info.ObjectACL))
@@ -549,7 +555,10 @@ func (s *Service) GetSTSCredential(ctx context.Context, req *storagev1.GetSTSCre
 		return nil, err
 	}
 
-	bucket := conv.ResolveBucket(req.GetBucket(), s.cfg.Storage.DefaultBucket)
+	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.cfg.Storage.DefaultBucket, s.cfg.Storage.PublicBucket, req.GetVisibility())
+	if err != nil {
+		return nil, err
+	}
 	if v := req.GetVendor(); v != storagev1.Vendor_VENDOR_UNSPECIFIED {
 		if actual := s.registry.VendorForBucket(bucket); actual != v {
 			return nil, xcodes.ErrBucketVendorMismatch.New(fmt.Sprintf("bucket %q belongs to %v, not %v", bucket, actual, v))
@@ -612,6 +621,13 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 	// sts would otherwise silently substitute its default for ttl=0, leaving
 	// the session expired at birth.
 	ttl = s.sts.ResolveTTL(ttl)
+
+	// Hard single-file ceiling, enforced before any dedup/quota work on both
+	// the instant and credential paths. Inline uploads above this belong on
+	// the link (object-storage reference) channel instead.
+	if max := s.cfg.Storage.MaxUploadBytes; max > 0 && file.size > max {
+		return nil, xcodes.ErrFileSizeExceeded.New(fmt.Sprintf("file size %d exceeds upload limit %d", file.size, max))
+	}
 
 	vendor := int32(s.registry.VendorForBucket(bucket))
 
@@ -718,6 +734,14 @@ func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ow
 		AllowedActions:    []string{types.PutObjectActionForVendor(prepared.vendor)},
 		MaxSize:           file.size,
 		TTL:               prepared.resolvedTTL,
+		// Hardening: STS credentials are bucket/prefix-scoped, so lock them
+		// down as far as the policy layer allows — HTTPS-only transport,
+		// force private object ACLs, and deny post-upload ACL changes.
+		// Without DenyPutObjectACL a client could promote its upload to
+		// public-read inside a private bucket.
+		EnforceHTTPS:     true,
+		LockObjectACL:    true,
+		DenyPutObjectACL: true,
 	}
 	creds, err := s.sts.Get(ctx, ownerType, ownerID, prepared.vendor, bucket, prepared.resolvedTTL, stsPolicy)
 	if err != nil {

@@ -52,6 +52,17 @@ func (h *Handler) GenerateDownloadURL(ctx context.Context, req *storagev1.Genera
 	return h.svc.GenerateDownloadURL(ctx, req)
 }
 
+// CreateFileLink mints or renews an anonymous link token for a file.
+func (h *Handler) CreateFileLink(ctx context.Context, req *storagev1.CreateFileLinkRequest) (*storagev1.CreateFileLinkResponse, error) {
+	return h.svc.CreateFileLink(ctx, req)
+}
+
+// GetFileLinkDownload is the anonymous link-link backend — the token is
+// the credential, no owner context is required.
+func (h *Handler) GetFileLinkDownload(ctx context.Context, req *storagev1.GetFileLinkDownloadRequest) (*storagev1.GetFileLinkDownloadResponse, error) {
+	return h.svc.GetFileLinkDownload(ctx, req)
+}
+
 // ListMyFiles lists files owned by the caller with pagination.
 func (h *Handler) ListMyFiles(ctx context.Context, req *storagev1.ListMyFilesRequest) (*storagev1.ListMyFilesResponse, error) {
 	return h.svc.ListMyFiles(ctx, req)

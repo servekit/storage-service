@@ -104,6 +104,20 @@ enum UploadSessionStatus {
   UPLOAD_SESSION_STATUS_CANCELLED   = 4;
 }
 
+// Visibility declares the intended audience class of an upload (avatar /
+// cover style "public resource" vs. default private). It maps to BUCKETS, not
+// per-file ACLs: objects are content-addressed and deduplicated globally, so
+// a physical object cannot be public for one referencing file and private
+// for another — bucket-level visibility is the only coherent granularity.
+// PUBLIC uploads land in the configured public bucket (public-read / CDN);
+// PRIVATE (and UNSPECIFIED, for backward compatibility) keep today's
+// behavior: the requested bucket, or the default bucket when unset.
+enum Visibility {
+  VISIBILITY_UNSPECIFIED = 0;
+  VISIBILITY_PUBLIC = 1;
+  VISIBILITY_PRIVATE = 2;
+}
+
 // AuditLogStatus represents the result of an audited operation.
 enum AuditLogStatus {
   AUDIT_LOG_STATUS_UNSPECIFIED = 0;
@@ -154,8 +168,8 @@ service StorageService {
       body: "*"
     };
   }
-  // BatchGetSTSCredential returns shared STS credentials plus per-file upload
-  // tokens / instant results for a batch of files. The shared STS credential
+  // BatchGetSTSCredential returns linkd STS credentials plus per-file upload
+  // tokens / instant results for a batch of files. The linkd STS credential
   // is fetched once and reused across all files in the batch.
   rpc BatchGetSTSCredential(BatchGetSTSCredentialRequest) returns (BatchGetSTSCredentialResponse) {
     option (google.api.http) = {
@@ -187,6 +201,30 @@ service StorageService {
     option (google.api.http) = {
       post: "/v1/files/{file_id}:generateDownloadUrl"
       body: "*"
+    };
+  }
+
+  // Links (long-lived references for embedding into external systems)
+
+  // CreateFileLink mints (or returns the existing) anonymous link token for
+  // a file. The token is the credential for GetFileLinkDownload — random,
+  // not derived from file_id, so renewing retention never invalidates links
+  // already embedded in emails or documents. Optionally resets the retention
+  // window (renewal).
+  rpc CreateFileLink(CreateFileLinkRequest) returns (CreateFileLinkResponse) {
+    option (google.api.http) = {
+      post: "/v1/files/{file_id}/links"
+      body: "*"
+    };
+  }
+  // GetFileLinkDownload is the anonymous link-link backend: recipients hit
+  // it from links embedded in emails etc. Returns a freshly presigned
+  // short-TTL download URL plus the file summary, or expired=true once the
+  // retention window has closed (the link outlives the file only in that
+  // sense). No owner required — the token IS the credential.
+  rpc GetFileLinkDownload(GetFileLinkDownloadRequest) returns (GetFileLinkDownloadResponse) {
+    option (google.api.http) = {
+      get: "/v1/links/{link_token}/download"
     };
   }
 
@@ -316,7 +354,7 @@ service StorageService {
 
   // Business-facing quota management.
   // TODO(auth): these RPCs have no authentication today. Before exposing in
-  // production, add service-to-service authentication (shared secret / mTLS /
+  // production, add service-to-service authentication (linkd secret / mTLS /
   // OAuth client credentials). See go-common/grpcx/auth.go for helpers.
 
   // SetOwnerQuota overwrites an owner's total quota. Business-facing (e.g.
@@ -360,6 +398,11 @@ message GenerateUploadURLRequest {
   // the resolved bucket belongs to this vendor; mismatch returns
   // BUCKET_VENDOR_MISMATCH. Leave UNSPECIFIED to skip the check (legacy behavior).
   Vendor vendor = 10;
+  // visibility selects the audience class. PUBLIC overrides `bucket` with
+  // the configured public bucket (both must belong to a compatible vendor
+  // when vendor is pinned); UNSPECIFIED/PRIVATE keep the bucket field in
+  // charge.
+  Visibility visibility = 12;
   Owner owner = 255;
 
   // request_id is optional. If set, recorded in audit logs for traceability.
@@ -399,6 +442,9 @@ message GetSTSCredentialRequest {
   // at PUT time (Resource wildcards in STS policy). Empty = no restriction.
   // Service normalizes to lowercase; ".JPG" matches [".jpg"].
   repeated string allowed_extensions = 12;
+  // visibility selects the audience class — same semantics as
+  // GenerateUploadURLRequest.visibility.
+  Visibility visibility = 13;
   Owner owner = 255;
 
   // request_id is optional. If set, recorded in audit logs for traceability.
@@ -425,10 +471,13 @@ message BatchGetSTSCredentialRequest {
   repeated UploadFileMeta files = 1;
   string bucket = 2;
   google.protobuf.Duration ttl = 3;
-  // allowed_extensions is batch-level (the whole batch shares one STS
+  // allowed_extensions is batch-level (the whole batch links one STS
   // credential); per-file restrictions would require one AssumeRole call per
   // file, defeating batch's round-trip savings.
   repeated string allowed_extensions = 4;
+  // visibility is batch-level — same semantics as
+  // GenerateUploadURLRequest.visibility, applied to every file in the batch.
+  Visibility visibility = 5;
   Owner owner = 255;
   string request_id = 256;
 }
@@ -471,7 +520,7 @@ message ItemError {
 }
 
 message BatchGetSTSCredentialResponse {
-  // Shared STS credential for the whole batch. All per-file uploads use the
+  // Linkd STS credential for the whole batch. All per-file uploads use the
   // same temporary credential; the client differentiates by upload_token.
   string access_key = 1;
   string secret_key = 2;
@@ -521,6 +570,45 @@ message GenerateDownloadURLRequest {
 message GenerateDownloadURLResponse {
   string download_url = 1;
   int64 expires_at = 2;
+}
+
+// Links
+
+message CreateFileLinkRequest {
+  int64 file_id = 1 [(buf.validate.field).int64 = {gt: 0}];
+  // retention_ttl_seconds, when > 0, resets retain_until = now + ttl
+  // (renewal — the link token itself never changes). 0 keeps the current
+  // value. A link can only be created on an active, unexpired file.
+  int32 retention_ttl_seconds = 2;
+  Owner owner = 255;
+  string request_id = 256;
+}
+
+message CreateFileLinkResponse {
+  // link_token is the anonymous credential for GetFileLinkDownload. Stable
+  // across renewals; callers embed it in their own stable URL surface.
+  string link_token = 1;
+  // retain_until is the current retention deadline as unix seconds;
+  // 0 = permanent.
+  int64 retain_until = 2;
+}
+
+message GetFileLinkDownloadRequest {
+  string link_token = 1 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+}
+
+message GetFileLinkDownloadResponse {
+  // expired = true means the retention window has closed (or the file was
+  // removed): download_url is empty and callers should render an
+  // "attachment expired" page instead of redirecting.
+  bool expired = 1;
+  string filename = 2;
+  int64 size_bytes = 3;
+  // download_url is a freshly presigned URL with a short TTL (minutes),
+  // minted per request — recipients' link clicks never depend on a stored
+  // signature.
+  string download_url = 4;
+  int64 retain_until = 5;
 }
 
 // User File Management

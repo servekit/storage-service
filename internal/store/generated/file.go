@@ -119,6 +119,9 @@ var StorageFile = struct {
 	Description field.String
 	Metadata    field.Field[models.MapJSON]
 	IsPublic    field.Bool
+	RetainUntil field.Time
+	LinkToken   field.String
+	ExpiredAt   field.Time
 	DeletedAt   field.Time
 	CreatedAt   field.Time
 	UpdatedAt   field.Time
@@ -132,6 +135,9 @@ var StorageFile = struct {
 	Description: field.String{}.WithColumn("description"),
 	Metadata:    field.Field[models.MapJSON]{}.WithColumn("metadata"),
 	IsPublic:    field.Bool{}.WithColumn("is_public"),
+	RetainUntil: field.Time{}.WithColumn("retain_until"),
+	LinkToken:   field.String{}.WithColumn("link_token"),
+	ExpiredAt:   field.Time{}.WithColumn("expired_at"),
 	DeletedAt:   field.Time{}.WithColumn("deleted_at"),
 	CreatedAt:   field.Time{}.WithColumn("created_at"),
 	UpdatedAt:   field.Time{}.WithColumn("updated_at"),

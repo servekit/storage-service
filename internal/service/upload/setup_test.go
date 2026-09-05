@@ -78,6 +78,7 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 		SecretKey: "sk-fake",
 		Buckets: []*config.BucketConfig{
 			{Name: "uploads", KeyPrefix: "uploads/", ACL: "private"},
+			{Name: "public-uploads", KeyPrefix: "public/", ACL: "public-read"},
 		},
 	}
 	registry, err := storage.NewRegistryWithProvider(providerCfg, fp, nil)
@@ -90,6 +91,7 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 			UploadTokenSecret: testSecret,
 			DefaultQuotaBytes: 1 << 30,
 			DefaultBucket:     "uploads",
+			PublicBucket:      "public-uploads",
 			UploadGC:          &config.UploadGCConfig{BatchSize: 100},
 			Batch:             &config.BatchConfig{MaxSize: 100, Concurrency: 4},
 		},

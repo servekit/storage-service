@@ -10,6 +10,7 @@ import (
 	"github.com/servekit/go-common/jsonx"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
+	"github.com/servekit/storage-service/pkg/xcodes"
 )
 
 // OwnerTypeToProto converts an int32 owner_type DB value to its proto enum.
@@ -60,6 +61,22 @@ func ResolveBucket(bucket, defaultBucket string) string {
 		return bucket
 	}
 	return defaultBucket
+}
+
+// ResolveBucketForVisibility extends ResolveBucket with the audience-class
+// mapping: visibility=PUBLIC uploads always land in the configured public
+// bucket (the caller's `bucket` field is ignored — public placement must not
+// depend on caller-supplied names), while PRIVATE / UNSPECIFIED keep the
+// legacy resolution. Returns an error when PUBLIC is requested but no public
+// bucket is configured.
+func ResolveBucketForVisibility(bucket, defaultBucket, publicBucket string, visibility storagev1.Visibility) (string, error) {
+	if visibility == storagev1.Visibility_VISIBILITY_PUBLIC {
+		if publicBucket == "" {
+			return "", xcodes.ErrBadRequest.New("visibility=PUBLIC requested but no public bucket is configured")
+		}
+		return publicBucket, nil
+	}
+	return ResolveBucket(bucket, defaultBucket), nil
 }
 
 // ProtoToImageOp converts a proto ImageProcessOp to a types.Op. Callers pass

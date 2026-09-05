@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
+	"github.com/servekit/storage-service/internal/store/models"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,4 +141,68 @@ func TestIsPublicACL(t *testing.T) {
 			assert.Equal(t, tc.want, isPublicACL(tc.acl))
 		})
 	}
+}
+
+// TestGenerateUploadURL_VisibilityPublicUsesPublicBucket verifies the
+// visibility=PUBLIC mapping: the presigned PUT must target the configured
+// public bucket (caller bucket field ignored) and the session snapshot must
+// mark the file public.
+func TestGenerateUploadURL_VisibilityPublicUsesPublicBucket(t *testing.T) {
+	svc, fp, db := setupUploadServiceWithFakeProvider(t, noopHost{})
+
+	resp, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
+		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 300},
+		Filename:    "avatar.png",
+		Md5:         "10000000000000000000000000000001",
+		Size:        16,
+		ContentType: "image/png",
+		Bucket:      "uploads", // deliberately private; PUBLIC must override it
+		Visibility:  storagev1.Visibility_VISIBILITY_PUBLIC,
+	})
+	require.NoError(t, err)
+	require.False(t, resp.GetInstant(), "fresh md5 must not instant-upload")
+	require.Contains(t, resp.GetUploadUrl(), "public-uploads", "PUBLIC upload must land in the public bucket")
+	_ = fp
+
+	// The persisted session must carry the public bucket so ConfirmUpload
+	// verifies and persists is_public=true.
+	var sess models.StorageUploadSession
+	require.NoError(t, db.Where("owner_id = ?", 300).First(&sess).Error)
+	assert.Equal(t, "public-uploads", sess.Bucket)
+}
+
+// TestGenerateUploadURL_VisibilityPrivateKeepsBucket verifies the default
+// (UNSPECIFIED/PRIVATE) path is untouched: caller bucket wins.
+func TestGenerateUploadURL_VisibilityPrivateKeepsBucket(t *testing.T) {
+	svc, _, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
+
+	resp, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
+		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 301},
+		Filename:    "doc.pdf",
+		Md5:         "10000000000000000000000000000002",
+		Size:        16,
+		ContentType: "application/pdf",
+		Visibility:  storagev1.Visibility_VISIBILITY_PRIVATE,
+	})
+	require.NoError(t, err)
+	require.Contains(t, resp.GetUploadUrl(), "uploads")
+}
+
+// TestGenerateUploadURL_VisibilityPublicWithoutPublicBucket verifies the
+// fail-closed behavior: PUBLIC with no public bucket configured is a
+// bad-request, not a silent private placement.
+func TestGenerateUploadURL_VisibilityPublicWithoutPublicBucket(t *testing.T) {
+	svc, _, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
+	svc.cfg.Storage.PublicBucket = ""
+
+	_, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
+		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 302},
+		Filename:    "avatar.png",
+		Md5:         "10000000000000000000000000000003",
+		Size:        16,
+		ContentType: "image/png",
+		Visibility:  storagev1.Visibility_VISIBILITY_PUBLIC,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "public bucket")
 }

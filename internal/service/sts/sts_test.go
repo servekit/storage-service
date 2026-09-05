@@ -56,10 +56,11 @@ func TestSTS_TTLClamped(t *testing.T) {
 	svc := New(rdb, issuer, &config.STSConfig{DefaultTTL: 15 * time.Minute, MaxTTL: 30 * time.Second})
 
 	// Caller asks for 10 minutes; MaxTTL is 30s, so cache TTL should be 30s.
-	_, err := svc.Get(context.Background(), 1, 2, 1, "bucket-clamp", 10*time.Minute, &storage.STSPolicy{Bucket: "bucket-clamp"})
+	policy := &storage.STSPolicy{Bucket: "bucket-clamp"}
+	_, err := svc.Get(context.Background(), 1, 2, 1, "bucket-clamp", 10*time.Minute, policy)
 	require.NoError(t, err)
 
-	key := cacheKey(1, 2, 1, "bucket-clamp")
+	key := cacheKey(1, 2, 1, "bucket-clamp", policy)
 	ttl, err := rdb.TTL(context.Background(), key).Result()
 	require.NoError(t, err)
 	assert.InDelta(t, 30*time.Second, ttl, float64(2*time.Second), "cache TTL should be clamped to MaxTTL")
@@ -74,10 +75,11 @@ func TestSTS_PolicyUnchanged(t *testing.T) {
 	svc := New(rdb, issuer, &config.STSConfig{DefaultTTL: 20 * time.Minute, MaxTTL: time.Hour})
 
 	// Caller passes ttl = 0, expect resolved = DefaultTTL.
-	_, err := svc.Get(context.Background(), 1, 2, 1, "bucket-default", 0, &storage.STSPolicy{Bucket: "bucket-default"})
+	policy := &storage.STSPolicy{Bucket: "bucket-default"}
+	_, err := svc.Get(context.Background(), 1, 2, 1, "bucket-default", 0, policy)
 	require.NoError(t, err)
 
-	key := cacheKey(1, 2, 1, "bucket-default")
+	key := cacheKey(1, 2, 1, "bucket-default", policy)
 	ttl, err := rdb.TTL(context.Background(), key).Result()
 	require.NoError(t, err)
 	assert.InDelta(t, 20*time.Minute, ttl, float64(2*time.Second), "cache TTL should equal DefaultTTL when caller passes 0")
@@ -144,7 +146,7 @@ func TestSTS_ZeroExpirationNoClamp(t *testing.T) {
 	assert.Equal(t, "ak-zero", c1.AccessKey)
 
 	// Verify cache was actually populated (positive TTL).
-	key := cacheKey(1, 2, 1, "bucket-zero")
+	key := cacheKey(1, 2, 1, "bucket-zero", &storage.STSPolicy{Bucket: "bucket-zero"})
 	ttl, err := rdb.TTL(context.Background(), key).Result()
 	require.NoError(t, err)
 	assert.Positive(t, int64(ttl), "TTL must be positive even when ExpiresAt is zero")
@@ -278,7 +280,7 @@ func TestSTS_CacheTTLReservesSafetyMargin(t *testing.T) {
 	_, err := svc.Get(context.Background(), 1, 2, 1, "bucket-margin", 0, &storage.STSPolicy{Bucket: "bucket-margin"})
 	require.NoError(t, err)
 
-	key := cacheKey(1, 2, 1, "bucket-margin")
+	key := cacheKey(1, 2, 1, "bucket-margin", &storage.STSPolicy{Bucket: "bucket-margin"})
 	ttl, err := rdb.TTL(context.Background(), key).Result()
 	require.NoError(t, err)
 	// Expected ~15m (20m cred - 5m safety). Allow ±30s slack for test runtime.
@@ -304,7 +306,7 @@ func TestSTS_NearExpiryCacheTreatedAsMiss(t *testing.T) {
 		AccessKey: "ak-stale",
 		ExpiresAt: time.Now().Add(15 * time.Second),
 	}
-	key := cacheKey(1, 2, 1, "bucket-stale")
+	key := cacheKey(1, 2, 1, "bucket-stale", &storage.STSPolicy{Bucket: "bucket-stale"})
 	raw, err := jsonx.Marshal(stale)
 	require.NoError(t, err)
 	require.NoError(t, rdb.Set(context.Background(), key, raw, 10*time.Minute).Err(),
@@ -350,7 +352,7 @@ func TestSTS_ShortTTLWithMatchingMargin(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ak-short", c.AccessKey)
 
-	key := cacheKey(1, 2, 1, "bucket-short")
+	key := cacheKey(1, 2, 1, "bucket-short", &storage.STSPolicy{Bucket: "bucket-short"})
 	ttl, err := rdb.TTL(context.Background(), key).Result()
 	require.NoError(t, err)
 	// Expected ~2m30s (3m cred - 30s margin). Allow ±10s slack for runtime.

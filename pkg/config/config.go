@@ -53,21 +53,35 @@ type ServerConfig struct {
 
 // StorageConfig holds storage backend settings including providers and their buckets.
 type StorageConfig struct {
-	UploadTokenTTL        time.Duration `default:"30m"`
+	UploadTokenTTL time.Duration `default:"30m"`
 	UploadTokenSecret     string
 	DefaultQuotaBytes     int64 `default:"10737418240"` // 10GB
 	DefaultBucket         string
+	// PublicBucket is the bucket used for visibility=PUBLIC uploads (avatar /
+	// cover style public resources). It must be configured public-read (or
+	// fronted by a CDN); empty = PUBLIC uploads are rejected.
+	PublicBucket          string
 	OrphanRetention       time.Duration `default:"2h"`
 	SoftDeleteRetention   time.Duration `default:"168h"` // 7 days
 	DeletedOwnerRetention time.Duration `default:"720h"` // 30 days
-	RateLimit             *ratelimit.Config
-	Providers             []*ProviderConfig
-	STS                   *STSConfig
-	UploadGC              *UploadGCConfig
-	Batch                 *BatchConfig
-	Cron                  *CronConfig
-	UploadSession         *UploadSessionConfig
-	CDN                   CDNRuntimeConfig
+	// PresignMaxTTL caps the TTL callers may request on presigned
+	// download/process URLs. Without a cap, callers can mint near-permanent
+	// GET URLs (OSS v1 signatures have no provider-side ceiling) or hit
+	// provider hard limits as opaque 500s (S3 SigV4 rejects >7d).
+	PresignMaxTTL time.Duration `default:"24h"`
+	// MaxUploadBytes is the hard single-file size ceiling enforced at upload
+	// URL / STS issue time. Larger needs belong on the link (object-storage
+	// reference) channel, not inline uploads.
+	MaxUploadBytes int64 `default:"1073741824"` // 1GB
+	RateLimit      *ratelimit.Config
+	Providers      []*ProviderConfig
+	STS            *STSConfig
+	UploadGC       *UploadGCConfig
+	FileRetentionGC *FileRetentionGCConfig
+	Batch           *BatchConfig
+	Cron            *CronConfig
+	UploadSession   *UploadSessionConfig
+	CDN             CDNRuntimeConfig
 }
 
 // UploadSessionConfig configures session TTL and the shared upload lock
@@ -172,6 +186,19 @@ func (s *STSConfig) validate() error {
 type UploadGCConfig struct {
 	CronSpec  string `default:"*/5 * * * *"`
 	BatchSize int    `default:"100"`
+}
+
+// FileRetentionGCConfig configures the two-stage retention GC for shared
+// files. Stage 1 marks files past retain_until (releases quota + object
+// ref-counts); stage 2 physically removes rows whose expiry marker is older
+// than HardDeleteAfter — that delay doubles as the recovery window for
+// mistaken expiries (renew via CreateFileShare within it and the token keeps
+// working). Access semantics are NOT affected by either stage: the share
+// download path refuses files the moment retain_until passes.
+type FileRetentionGCConfig struct {
+	CronSpec        string        `default:"0 3 * * *"`
+	HardDeleteAfter time.Duration `default:"168h"` // 7 days
+	BatchSize       int           `default:"500"`
 }
 
 // BatchConfig configures BatchGetSTSCredential limits.
