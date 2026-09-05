@@ -20,6 +20,13 @@ type Provider interface {
 	GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
 	DeleteObject(ctx context.Context, bucket, key string) error
 	HeadObject(ctx context.Context, bucket, key string) (*ObjectInfo, error)
+	// CopyObject server-side copies srcKey to dstKey within the same bucket.
+	// Used by the two-phase upload flow: clients write to an unguessable
+	// staging key, then ConfirmUpload copies the verified bytes to the
+	// content-addressed final key — the client never holds a credential for
+	// the final key. Overwrites dstKey when it already exists (callers that
+	// need skip-if-exists do their own HeadObject first).
+	CopyObject(ctx context.Context, bucket, srcKey, dstKey string) error
 	PresignPutObject(ctx context.Context, bucket, key string, ttl time.Duration, opts ...PutPresignOption) (string, http.Header, error)
 	PresignGetObject(ctx context.Context, bucket, key string, ttl time.Duration, opts ...GetPresignOption) (string, error)
 	GetSTSToken(ctx context.Context, policy *STSPolicy) (*STSCredential, error)

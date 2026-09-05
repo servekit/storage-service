@@ -4,8 +4,12 @@
 package conv
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"github.com/servekit/go-common/jsonx"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
@@ -52,6 +56,52 @@ func ObjectKeyFromMD5(prefix, md5 string) string {
 		return prefix + md5
 	}
 	return prefix + md5[:2] + "/" + md5
+}
+
+// UploadSandboxPrefix returns the per-owner staging prefix under which
+// two-phase upload temp keys are minted: {prefix}tmp/{ownerType}-{ownerID}/.
+//
+// The owner segment scopes STS policies (a leaked credential can only trash
+// its own owner's sandbox, not another owner's in-flight uploads) and keeps
+// the tmp namespace debuggable. The random per-session segment added by
+// NewTempObjectKey is what makes keys unguessable — this prefix alone must
+// never be treated as a secret.
+func UploadSandboxPrefix(prefix string, ownerType int32, ownerID int64) string {
+	return prefix + "tmp/" + strconv.FormatInt(int64(ownerType), 10) + "-" +
+		strconv.FormatInt(ownerID, 10) + "/"
+}
+
+// NewTempObjectKey returns a staging key for a two-phase upload:
+// {prefix}tmp/{ownerType}-{ownerID}/{128-bit random hex}/{md5}.
+//
+// SECURITY: the content-addressed final key (ObjectKeyFromMD5) is derivable
+// from the MD5 alone, so handing a client a credential for it lets any logged-in
+// user overwrite an already-confirmed object with the same hash. Uploads
+// therefore write to this unguessable temp key; ConfirmUpload verifies the
+// bytes and performs the server-side copy to the final key. The random segment
+// is 128 bits — a credential minted for one session is useless against any
+// other session, even the same owner's.
+//
+// Falls back to a fixed (still owner-scoped) key when the system CSPRNG fails,
+// returning the error so callers can refuse the upload rather than silently
+// issuing a predictable key.
+func NewTempObjectKey(prefix string, ownerType int32, ownerID int64, md5 string) (string, error) {
+	var rnd [16]byte
+	if _, err := rand.Read(rnd[:]); err != nil {
+		return "", fmt.Errorf("generate upload staging key: %w", err)
+	}
+	return UploadSandboxPrefix(prefix, ownerType, ownerID) + hex.EncodeToString(rnd[:]) + "/" + md5, nil
+}
+
+// IsSandboxObjectKey reports whether key was minted by NewTempObjectKey for
+// the given owner — i.e. it lives under that owner's staging sandbox prefix.
+// GC uses this to decide whether a session's cloud object is staging
+// (exclusively owned by the session, safe to delete) or content-addressed
+// (globally deduped — must never be deleted from a session's cleanup path).
+// Content-address keys cannot collide with the sandbox prefix: their segment
+// after {prefix} is the MD5's first two hex chars, never "tmp".
+func IsSandboxObjectKey(key, prefix string, ownerType int32, ownerID int64) bool {
+	return strings.HasPrefix(key, UploadSandboxPrefix(prefix, ownerType, ownerID))
 }
 
 // ResolveBucket returns the provided bucket name if non-empty, otherwise falls

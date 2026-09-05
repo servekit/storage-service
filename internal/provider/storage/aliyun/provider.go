@@ -150,6 +150,21 @@ func (p *AliyunProvider) HeadObject(ctx context.Context, bucket, key string) (*t
 	return info, nil
 }
 
+// CopyObject server-side copies srcKey to dstKey within the same bucket.
+// Default (no ForbidOverwrite) semantics overwrite an existing dstKey —
+// callers that need skip-if-exists do their own HeadObject first.
+func (p *AliyunProvider) CopyObject(ctx context.Context, bucket, srcKey, dstKey string) error {
+	if _, err := p.client.CopyObject(ctx, &oss.CopyObjectRequest{
+		Bucket:       oss.Ptr(bucket),
+		Key:          oss.Ptr(dstKey),
+		SourceBucket: oss.Ptr(bucket),
+		SourceKey:    oss.Ptr(srcKey),
+	}); err != nil {
+		return fmt.Errorf("copy object %q -> %q: %w", srcKey, dstKey, err)
+	}
+	return nil
+}
+
 // PresignPutObject generates a presigned URL for uploading an object.
 // Options signed into the URL require the client to send matching headers.
 //

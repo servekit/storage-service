@@ -150,6 +150,19 @@ func (p *VolcengineProvider) HeadObject(ctx context.Context, bucket, key string)
 	return info, nil
 }
 
+// CopyObject server-side copies srcKey to dstKey within the same bucket.
+func (p *VolcengineProvider) CopyObject(ctx context.Context, bucket, srcKey, dstKey string) error {
+	if _, err := p.client.CopyObject(ctx, &tos.CopyObjectInput{
+		Bucket:    bucket,
+		Key:       dstKey,
+		SrcBucket: bucket,
+		SrcKey:    srcKey,
+	}); err != nil {
+		return fmt.Errorf("copy object %q -> %q: %w", srcKey, dstKey, err)
+	}
+	return nil
+}
+
 // PresignPutObject generates a presigned URL for uploading an object.
 // Options signed into the URL require the client to send matching headers.
 //

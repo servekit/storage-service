@@ -212,6 +212,19 @@ func (p *TencentProvider) HeadObject(ctx context.Context, bucket, key string) (*
 	return info, nil
 }
 
+// CopyObject server-side copies srcKey to dstKey via the PutObjectCopy API.
+// The copy source is addressed as "<bucket>/<srcKey>" — the SDK URL-encodes
+// the key portion itself (see ObjectService.Copy).
+func (p *TencentProvider) CopyObject(ctx context.Context, bucket, srcKey, dstKey string) error {
+	if err := p.checkBucket(bucket); err != nil {
+		return err
+	}
+	if _, _, err := p.client.Object.Copy(ctx, dstKey, bucket+"/"+srcKey, nil); err != nil {
+		return fmt.Errorf("copy object %q -> %q: %w", srcKey, dstKey, err)
+	}
+	return nil
+}
+
 // PresignPutObject generates a presigned URL for uploading an object.
 // Signed headers (Content-Type, Cache-Control) are surfaced in the returned
 // http.Header so the caller can forward them on the actual PUT request —

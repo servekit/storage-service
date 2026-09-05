@@ -133,6 +133,54 @@ func ListExpiredPendingUploadSessions(ctx context.Context, tx *gorm.DB, now time
 	return sessions, nil
 }
 
+// ListExpiredSettledUploadSessions returns up to limit CONFIRMED or CANCELLED
+// sessions past their expiry, for the staging-key GC sweep. Their business
+// outcome is already recorded (file row or explicit cancel), so the only work
+// left is reclaiming the two-phase staging object and retiring the row.
+func ListExpiredSettledUploadSessions(ctx context.Context, tx *gorm.DB, now time.Time, limit int) ([]models.StorageUploadSession, error) {
+	sessions, err := gorm.G[models.StorageUploadSession](tx).
+		Where(generated.StorageUploadSession.Status.In(
+			int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_CONFIRMED),
+			int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_CANCELLED),
+		)).
+		Where(generated.StorageUploadSession.ExpiresAt.Lt(now)).
+		Limit(limit).
+		Find(ctx)
+	if err != nil {
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	return sessions, nil
+}
+
+// SoftDeleteUploadSession retires a settled (non-PENDING) session row after
+// its cloud-side cleanup completed. GORM auto-handles deleted_at via the
+// model's gorm.DeletedAt field; retired rows stay queryable for audit while
+// being excluded from future GC scans. Returns ErrUploadSessionNotFound when
+// the row was already deleted, and ErrUploadSessionNotPending when it is
+// still PENDING — those must go through the PENDING reap path
+// (MarkUploadSessionExpired) instead.
+func SoftDeleteUploadSession(ctx context.Context, tx *gorm.DB, id int64) error {
+	rowsAffected, err := gorm.G[models.StorageUploadSession](tx).
+		Where(generated.StorageUploadSession.ID.Eq(id)).
+		Where(generated.StorageUploadSession.Status.Neq(int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING))).
+		Delete(ctx)
+	if err != nil {
+		return xcodes.ErrInternal.Wrapf(err, "soft delete upload session")
+	}
+	if rowsAffected == 0 {
+		// Distinguish "already retired" (idempotent success) from "still
+		// PENDING" (caller bug — must go through the PENDING reap path).
+		s, getErr := GetUploadSessionByID(ctx, tx, id)
+		if getErr == nil && s.Status == int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING) {
+			return xcodes.ErrUploadSessionNotPending.New()
+		}
+		// getErr != nil means the row is gone (retired elsewhere or never
+		// existed) — the outcome this function promises already holds.
+		return nil
+	}
+	return nil
+}
+
 // (TryUploadSessionAdvisoryLock removed: GC cross-replica exclusion now uses a
 // Redis lock in the upload service — see upload.newReaperLock / reap.go. The
 // former PostgreSQL advisory lock was the only pg-specific SQL in this package.)

@@ -177,6 +177,22 @@ func (p *HuaweiProvider) HeadObject(ctx context.Context, bucket, key string) (*t
 	return info, nil
 }
 
+// CopyObject server-side copies srcKey to dstKey within the same bucket.
+// CopyObjectInput embeds Bucket/Key via ObjectOperationInput, so they can't be
+// set in a struct literal — same pattern as PutObject.
+func (p *HuaweiProvider) CopyObject(ctx context.Context, bucket, srcKey, dstKey string) error {
+	_ = ctx // OBS SDK v3.26.3 CopyObject has no context parameter
+	input := &obs.CopyObjectInput{}
+	input.Bucket = bucket
+	input.Key = dstKey
+	input.CopySourceBucket = bucket
+	input.CopySourceKey = srcKey
+	if _, err := p.client.CopyObject(input); err != nil {
+		return fmt.Errorf("copy object %q -> %q: %w", srcKey, dstKey, err)
+	}
+	return nil
+}
+
 // PresignPutObject generates a presigned URL for uploading an object.
 // Options signed into the URL require the client to send matching headers.
 //

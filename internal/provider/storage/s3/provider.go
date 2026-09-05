@@ -177,6 +177,22 @@ func (p *S3Provider) HeadObject(ctx context.Context, bucket, key string) (*types
 	return info, nil
 }
 
+// CopyObject server-side copies srcKey to dstKey within the same bucket via
+// the CopyObject API. The source is addressed as "bucket/key" (S3 convention:
+// CopySource carries an unescaped source path relative to the bucket host);
+// keys in the project's layouts are hex/slash-only so no URL escaping applies.
+func (p *S3Provider) CopyObject(ctx context.Context, bucket, srcKey, dstKey string) error {
+	_, err := p.client.CopyObject(ctx, &awss3.CopyObjectInput{
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(dstKey),
+		CopySource: aws.String(bucket + "/" + srcKey),
+	})
+	if err != nil {
+		return fmt.Errorf("s3 copy object %s/%s -> %s/%s: %w", bucket, srcKey, bucket, dstKey, err)
+	}
+	return nil
+}
+
 // PresignPutObject generates a presigned URL for uploading an object.
 // It returns the presigned URL and the signed HTTP headers.
 //

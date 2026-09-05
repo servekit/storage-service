@@ -126,6 +126,21 @@ func (p *FakeProvider) DeleteObject(_ context.Context, bucket, key string) error
 	return nil
 }
 
+// CopyObject copies the stored bytes from srcKey to dstKey within the same
+// bucket, preserving content type, ETag, and ACL so confirm-flow tests can
+// assert what landed at the final key.
+func (p *FakeProvider) CopyObject(_ context.Context, bucket, srcKey, dstKey string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	src, ok := p.objects[bucket+"/"+srcKey]
+	if !ok {
+		return types.ErrObjectNotFound
+	}
+	copied := *src
+	p.objects[bucket+"/"+dstKey] = &copied
+	return nil
+}
+
 // ObjectExists reports whether an object is stored under (bucket, key).
 // Test helper for asserting presence/absence after operations like GC.
 func (p *FakeProvider) ObjectExists(bucket, key string) bool {

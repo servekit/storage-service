@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -424,14 +425,30 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 			"session is private but object has ACL %q", info.ObjectACL))
 	}
 
+	// Two-phase landing: the client wrote to the unguessable staging key
+	// (session.ObjectKey). Derive the content-addressed final key from the live
+	// bucket prefix and move the verified bytes there server-side — clients
+	// never hold a credential for a final key, so confirmed objects cannot be
+	// overwritten through the upload path. Legacy sessions minted before the
+	// two-phase flow carry the final key directly; for those the copy is a
+	// no-op (source == destination).
+	finalKey := conv.ObjectKeyFromMD5(confirmBucketCfg.KeyPrefix, session.MD5)
+	finalInfo := info
+	if session.ObjectKey != finalKey {
+		finalInfo, err = ensureFinalObject(ctx, p, session.Bucket, session.ObjectKey, finalKey, session.MD5)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	obj := &models.StorageObject{
 		Vendor:       session.Vendor,
 		Bucket:       session.Bucket,
-		ObjectKey:    session.ObjectKey,
+		ObjectKey:    finalKey,
 		MD5:          session.MD5,
-		Size:         info.Size,
+		Size:         finalInfo.Size,
 		ContentType:  session.ContentType,
-		ETag:         info.ETag,
+		ETag:         finalInfo.ETag,
 		StorageClass: int32(storagev1.StorageClass_STORAGE_CLASS_STANDARD),
 		IsPublic:     confirmIsPublic,
 	}
@@ -533,14 +550,62 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 			Filename:    session.Filename,
 			FilePath:    session.FilePath,
 			Description: session.Description,
-			Size:        info.Size,
+			Size:        finalInfo.Size,
 			ContentType: session.ContentType,
 			MD5:         session.MD5,
 			IsPublic:    confirmIsPublic,
 		}),
 	}, nil)
 
+	// Reclaim the staging object now that the final key holds the bytes.
+	// Best-effort: on failure the settled-session GC sweep (reap.go) deletes it
+	// after the session expires, so a transient delete error cannot leak the
+	// bytes permanently. Runs after the commit — deleting before it would race
+	// a rollback (the bytes would still be wanted at the staging key).
+	if session.ObjectKey != finalKey {
+		if delErr := p.DeleteObject(ctx, session.Bucket, session.ObjectKey); delErr != nil {
+			slog.Warn("confirm upload: reclaim staging object", "session_id", session.ID,
+				"key", session.ObjectKey, "error", delErr)
+		}
+	}
+
 	return result, nil
+}
+
+// ensureFinalObject lands the verified staging bytes at the content-addressed
+// final key and returns the final object's Head info.
+//
+// Global dedup is preserved: when the final key already holds an object whose
+// ETag matches the MD5, the copy is skipped and the existing bytes stay
+// authoritative. An existing object whose ETag disagrees with its own content
+// address is corrupt by definition (legacy pollution or multipart-ETag shape)
+// — the copy overwrites it with freshly verified bytes, which heals rather
+// than destroys. Note the single-shot CopyObject API caps at 5GB on most
+// providers; the enforced MaxUploadBytes ceiling (default 1GB) keeps uploads
+// within that limit.
+func ensureFinalObject(ctx context.Context, p storage.Provider, bucket, stagingKey, finalKey, md5 string) (*types.ObjectInfo, error) {
+	existing, err := p.HeadObject(ctx, bucket, finalKey)
+	switch {
+	case err == nil:
+		if etag := strings.Trim(existing.ETag, "\""); etag != "" && etag == md5 {
+			return existing, nil
+		}
+		// ETag mismatch: fall through and overwrite via copy so the key holds
+		// verified bytes for its own content address.
+	case errors.Is(err, storage.ErrObjectNotFound):
+		// Final object absent — copy below.
+	default:
+		return nil, xcodes.ErrInternal.Wrapf(err, "head final object %q", finalKey)
+	}
+
+	if copyErr := p.CopyObject(ctx, bucket, stagingKey, finalKey); copyErr != nil {
+		return nil, xcodes.ErrInternal.Wrapf(copyErr, "copy staging object %q to final key %q", stagingKey, finalKey)
+	}
+	finalInfo, err := p.HeadObject(ctx, bucket, finalKey)
+	if err != nil {
+		return nil, xcodes.ErrInternal.Wrapf(err, "verify copied object at final key %q", finalKey)
+	}
+	return finalInfo, nil
 }
 
 // GetSTSCredential returns a short-lived STS credential scoped to a single
@@ -586,7 +651,7 @@ func (s *Service) GetSTSCredential(ctx context.Context, req *storagev1.GetSTSCre
 		requestID:   req.GetRequestId(),
 	}
 
-	result, err := s.issueUploadCredential(ctx, ownerType, ownerID, bucket, ttl, file, allowed)
+	result, err := s.issueUploadCredential(ctx, ownerType, ownerID, bucket, ttl, file)
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +716,15 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 		return &prepareResult{instant: true, fileID: fileInfo.Id, fileInfo: fileInfo}, nil
 	}
 
-	objectKey := conv.ObjectKeyFromMD5(bucketCfg.KeyPrefix, file.md5)
+	// Two-phase upload: stage the client's PUT at an unguessable temp key.
+	// The content-addressed final key (ObjectKeyFromMD5) is derivable from the
+	// MD5 alone, so a credential for it would let any caller overwrite an
+	// already-confirmed object with the same hash. ConfirmUpload verifies the
+	// staged bytes and copies them to the final key server-side.
+	objectKey, keyErr := conv.NewTempObjectKey(bucketCfg.KeyPrefix, ownerType, ownerID, file.md5)
+	if keyErr != nil {
+		return nil, xcodes.ErrInternal.Wrap(keyErr)
+	}
 
 	// 2. checkQuota (read-only; no DB write)
 	if checkErr := s.host.CheckQuota(ctx, s.db, ownerType, ownerID, file.size); checkErr != nil {
@@ -716,7 +789,7 @@ type prepareResult struct {
 //
 //	1-4. shared prepareUpload prelude (dedup/quota/session/token)
 //	5. STS credential (cached per owner+vendor+bucket)
-func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ownerID int64, bucket string, ttl time.Duration, file fileMeta, allowedExtensions []string) (*issueResult, error) {
+func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ownerID int64, bucket string, ttl time.Duration, file fileMeta) (*issueResult, error) {
 	prepared, err := s.prepareUpload(ctx, ownerType, ownerID, bucket, ttl, file)
 	if err != nil {
 		return nil, err
@@ -726,19 +799,25 @@ func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ow
 	}
 
 	stsPolicy := &storage.STSPolicy{
-		OwnerID:           ownerID,
-		OwnerType:         ownerType,
-		Bucket:            bucket,
-		KeyPrefix:         prepared.bucketCfg.KeyPrefix,
-		AllowedExtensions: allowedExtensions,
-		AllowedActions:    []string{types.PutObjectActionForVendor(prepared.vendor)},
-		MaxSize:           file.size,
-		TTL:               prepared.resolvedTTL,
-		// Hardening: STS credentials are bucket/prefix-scoped, so lock them
-		// down as far as the policy layer allows — HTTPS-only transport,
-		// force private object ACLs, and deny post-upload ACL changes.
-		// Without DenyPutObjectACL a client could promote its upload to
-		// public-read inside a private bucket.
+		OwnerID:   ownerID,
+		OwnerType: ownerType,
+		Bucket:    bucket,
+		// Scope the credential to the owner's staging sandbox, not the bucket's
+		// whole key prefix: a leaked credential can then only write into
+		// (and at worst trash) that owner's own in-flight uploads. The temp key
+		// issued above lives under this prefix, so the PUT still succeeds.
+		//
+		// AllowedExtensions is deliberately NOT forwarded: the client PUTs to a
+		// server-chosen temp key with no file extension, so extension-shaped
+		// resource patterns ("<prefix>/*.jpg") can never match it. Extension
+		// policy is enforced at issue time by validateFilenameExtension instead.
+		KeyPrefix:      conv.UploadSandboxPrefix(prepared.bucketCfg.KeyPrefix, ownerType, ownerID),
+		AllowedActions: []string{types.PutObjectActionForVendor(prepared.vendor)},
+		MaxSize:        file.size,
+		TTL:            prepared.resolvedTTL,
+		// Hardening: HTTPS-only transport, force private object ACLs, and deny
+		// post-upload ACL changes. Without DenyPutObjectACL a client could
+		// promote its upload to public-read inside a private bucket.
 		EnforceHTTPS:     true,
 		LockObjectACL:    true,
 		DenyPutObjectACL: true,

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/servekit/go-common/redisx"
+	"github.com/servekit/go-common/xerr"
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/service/conv"
@@ -140,6 +141,65 @@ func (s *Service) ReapExpiredSessions(ctx context.Context) (int, error) {
 				Status: int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_EXPIRED),
 			}),
 		}, nil)
+	}
+
+	// Phase 2: settled sessions (CONFIRMED / CANCELLED) past expiry. Their
+	// staging object is exclusively owned — no live file row points at it (the
+	// confirmed bytes live at the content-addressed final key) — so reclaiming
+	// it is always safe. This bounds the leak from a failed inline staging
+	// delete in ConfirmUpload and collects cancelled sessions' leftovers.
+	settled, err := dal.ListExpiredSettledUploadSessions(ctx, s.db, now, batchSize)
+	if err != nil {
+		// Phase 1 already succeeded; a phase-2 scan failure should not fail
+		// the whole reap call (the next cycle retries).
+		slog.Error("upload gc: list settled sessions", "error", err)
+		return deleted, nil
+	}
+	for i := range settled {
+		sess := settled[i]
+
+		// Only staging keys (owner-sandbox minted) are exclusively owned by the
+		// session and safe to delete. Legacy rows carry the content-addressed
+		// key directly (globally deduped, possibly shared with live objects) —
+		// leave both the object and the row untouched; they are one deploy's
+		// worth of history and re-scanning them is harmless.
+		bucketCfg, cfgErr := s.registry.BucketConfig(sess.Bucket)
+		if cfgErr != nil {
+			slog.Error("upload gc: resolve bucket config for settled session", "session_id", sess.ID, "bucket", sess.Bucket, "error", cfgErr)
+			continue
+		}
+		if !conv.IsSandboxObjectKey(sess.ObjectKey, bucketCfg.KeyPrefix, sess.OwnerType, sess.OwnerID) {
+			continue
+		}
+		p, pErr := s.registry.ProviderForBucket(sess.Bucket)
+		if pErr != nil {
+			slog.Error("upload gc: resolve provider for settled session", "session_id", sess.ID, "bucket", sess.Bucket, "error", pErr)
+			continue
+		}
+		// Head-first so an already-reclaimed staging object (provider
+		// DeleteObject semantics vary on missing keys) still lets the row
+		// retire instead of being rescanned forever.
+		if _, headErr := p.HeadObject(ctx, sess.Bucket, sess.ObjectKey); headErr != nil {
+			if !errors.Is(headErr, storage.ErrObjectNotFound) {
+				slog.Error("upload gc: head settled staging object", "session_id", sess.ID, "key", sess.ObjectKey, "error", headErr)
+				continue
+			}
+		} else if delErr := p.DeleteObject(ctx, sess.Bucket, sess.ObjectKey); delErr != nil {
+			slog.Error("upload gc: delete settled staging object", "session_id", sess.ID, "key", sess.ObjectKey, "error", delErr)
+			continue
+		} else {
+			deleted++
+		}
+		if err := dal.SoftDeleteUploadSession(ctx, s.db, sess.ID); err != nil {
+			// Not-pending here means a concurrent PENDING-path transition —
+			// skip quietly; anything else logs and retries next cycle.
+			var xe *xerr.Error
+			if errors.As(err, &xe) && xe.Code().Reason() == xcodes.ErrUploadSessionNotPending.Reason() {
+				continue
+			}
+			slog.Error("upload gc: retire settled session", "session_id", sess.ID, "error", err)
+			continue
+		}
 	}
 	return deleted, nil
 }

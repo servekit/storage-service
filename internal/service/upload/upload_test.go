@@ -2,6 +2,7 @@ package upload
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	storagev1 "github.com/servekit/storage-service/gen/storage/v1"
@@ -109,10 +110,19 @@ func TestBatchGetSTSCredential_ObjectKeyPopulated(t *testing.T) {
 
 	token := resp.GetItems()[0].GetToken()
 	require.NotNil(t, token, "expected a token item, got error or instant file_id")
-	// Object key shape is "<keyPrefix>/<md5[:2]>/<md5>". setup_test.go uses
-	// KeyPrefix "uploads/", so the expected key is "uploads/00/<md5>".
-	assert.Equal(t, "uploads/00/"+md5, token.GetObjectKey(),
-		"object_key must be the full sharded path, not just the keyPrefix")
+	// Two-phase: object_key is an unguessable staging key under the owner's
+	// sandbox — "<keyPrefix>tmp/<ownerType>-<ownerID>/<random32>/<md5>" — NOT
+	// the derivable content-addressed key. Assert the sandbox shape and that
+	// the derivable final key ("uploads/00/<md5>") is never handed out.
+	key := token.GetObjectKey()
+	sandbox := "uploads/tmp/1-100/"
+	assert.True(t, strings.HasPrefix(key, sandbox),
+		"object_key %q must live under the owner staging sandbox %q", key, sandbox)
+	assert.True(t, strings.HasSuffix(key, "/"+md5), "object_key %q must end with the declared md5", key)
+	assert.Len(t, strings.TrimSuffix(strings.TrimPrefix(key, sandbox), "/"+md5), 32,
+		"staging key must carry a 128-bit random segment")
+	assert.NotEqual(t, "uploads/00/"+md5, key,
+		"the content-addressed final key must never be exposed to clients")
 }
 
 // TestNormalizeExtensions verifies trim/lowercase/empty-filter behavior.

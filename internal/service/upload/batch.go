@@ -83,12 +83,17 @@ func (s *Service) BatchGetSTSCredential(ctx context.Context, req *storagev1.Batc
 		return nil, xcodes.ErrBucketNotFound.Wrap(err)
 	}
 	creds, err := s.sts.Get(ctx, ownerType, ownerID, vendor, bucket, ttl, &storage.STSPolicy{
-		OwnerID:           ownerID,
-		OwnerType:         ownerType,
-		Bucket:            bucket,
-		KeyPrefix:         bucketCfg.KeyPrefix,
-		AllowedExtensions: allowedExt,
-		AllowedActions:    []string{types.PutObjectActionForVendor(vendor)},
+		OwnerID:   ownerID,
+		OwnerType: ownerType,
+		Bucket:    bucket,
+		// Sandbox-scoped prefix — MUST mirror issueUploadCredential's policy
+		// exactly: the STS cache is keyed only on owner+vendor+bucket, so any
+		// field drift here would let the first-minted (possibly broader)
+		// credential be reused by the other path. AllowedExtensions is not
+		// forwarded for the same reason as the single-file path: temp keys
+		// carry no extension, extension-shaped resources can never match.
+		KeyPrefix:      conv.UploadSandboxPrefix(bucketCfg.KeyPrefix, ownerType, ownerID),
+		AllowedActions: []string{types.PutObjectActionForVendor(vendor)},
 		// Resolve TTL the same way the per-file path does (upload.go's
 		// issueUploadCredential), so this shared credential and the per-file
 		// ones land in the same STS cache slot (policy fingerprint includes
@@ -146,7 +151,7 @@ func (s *Service) processOneUpload(ctx context.Context, ownerType int32, ownerID
 		metadata:    f.GetMetadata(),
 		requestID:   requestID,
 	}
-	result, err := s.issueUploadCredential(ctx, ownerType, ownerID, bucket, ttl, file, allowedExtensions)
+	result, err := s.issueUploadCredential(ctx, ownerType, ownerID, bucket, ttl, file)
 	if err != nil {
 		// issueUploadCredential wraps failures in xerr (e.g. ErrQuotaExceeded).
 		// Surface the stable Reason as ItemError.Code so callers can branch on it
