@@ -3,6 +3,10 @@
 通用存储服务。提供对象存储文件的上传、下载、管理（元数据、配额、软删除、生命周期、审计）等能力。
 可独立部署为 gRPC 服务，也可作为 Go 模块 in-process 嵌入宿主进程。
 
+## 平台化(2026-09)
+
+服务商/桶/CDN/默认桶配置已从 YAML 迁入 DB 平台表(storage_providers / storage_buckets / storage_settings),通过 admin RPC(AdminCreateProvider / AdminUpsertBucket / AdminGet/UpdateSettings)与 testkit 管理页维护,注册表热更新(变更即时生效 + cron 收敛;删除/改绑有对象数保护)。存量 YAML 一次性导入:`./storage-service migrate --seed-from-config`。设计见 `specs/2026-09-07-storage-platform-design.md`。
+
 ## 功能特性
 
 - **多供应商**：阿里云 OSS、AWS S3、腾讯云 COS、华为云 OBS、火山引擎 TOS、S3 兼容（MinIO 等）
