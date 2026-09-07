@@ -628,12 +628,13 @@ func TestExampleConfigsAreLoadable(t *testing.T) {
 	require.NoError(t, err, "config.example.yaml + .env.example must load and validate")
 
 	// Spot-check that ${VAR} was actually expanded, not left as a literal.
+	// Providers/buckets/default_bucket live in the DB platform tables now —
+	// the example YAML carries none of them (seed via 'migrate
+	// --seed-from-config' imports legacy blocks).
 	assert.Equal(t, ":19093", cfg.Server.GRPCAddr)
-	assert.Equal(t, "default", cfg.Storage.DefaultBucket)
+	assert.Empty(t, cfg.Storage.Providers)
+	assert.Empty(t, cfg.Storage.DefaultBucket)
 	assert.NotEqual(t, "${STORAGE_UPLOAD_TOKEN_SECRET}", cfg.Storage.UploadTokenSecret,
 		"env expansion must have replaced the placeholder")
-	require.Len(t, cfg.Storage.Providers, 2)
-	assert.Equal(t, "aliyun-primary", cfg.Storage.Providers[0].Name)
-	assert.Equal(t, "VENDOR_AWS_S3", cfg.Storage.Providers[1].Vendor)
 	assert.Equal(t, int64(10*1024*1024*1024), cfg.Storage.DefaultQuotaBytes)
 }
