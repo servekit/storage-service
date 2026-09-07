@@ -202,7 +202,7 @@ func (s *Service) GenerateUploadURL(ctx context.Context, req *storagev1.Generate
 		return nil, xcodes.ErrQuotaExceeded.Wrap(checkErr)
 	}
 
-	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.cfg.Storage.DefaultBucket, s.cfg.Storage.PublicBucket, req.GetVisibility())
+	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.registry.DefaultBucket(), s.registry.PublicBucket(), req.GetVisibility())
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +620,7 @@ func (s *Service) GetSTSCredential(ctx context.Context, req *storagev1.GetSTSCre
 		return nil, err
 	}
 
-	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.cfg.Storage.DefaultBucket, s.cfg.Storage.PublicBucket, req.GetVisibility())
+	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.registry.DefaultBucket(), s.registry.PublicBucket(), req.GetVisibility())
 	if err != nil {
 		return nil, err
 	}

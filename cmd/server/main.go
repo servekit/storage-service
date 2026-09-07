@@ -36,12 +36,18 @@ func main() {
 			os.Exit(1)
 		}
 	case "migrate":
-		if err := runMigrate(); err != nil {
+		seed := false
+		for _, arg := range os.Args[2:] {
+			if arg == "--seed-from-config" {
+				seed = true
+			}
+		}
+		if err := runMigrate(seed); err != nil {
 			slog.Error("migrate failed", "error", err)
 			os.Exit(1)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "usage: %s [serve|migrate]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s [serve|migrate [--seed-from-config]]\n", os.Args[0])
 		os.Exit(2)
 	}
 }

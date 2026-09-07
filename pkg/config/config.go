@@ -276,6 +276,9 @@ type ProviderConfig struct {
 	// domain ID to issue CreateTemporaryAccessKeyByAgency tokens. Empty on
 	// all other vendors (ignored by their SDKs).
 	DomainID string
+	// Disabled is DB-sourced (storage_providers.disabled); YAML never sets
+	// it. Disabled providers stay readable but reject new uploads.
+	Disabled bool
 	Buckets  []*BucketConfig
 }
 
@@ -320,12 +323,10 @@ func (c *Config) Validate() error {
 	if c.Storage.UploadTokenSecret == "" {
 		return fmt.Errorf("storage.upload_token_secret is required")
 	}
-	if c.Storage.DefaultBucket == "" {
-		return fmt.Errorf("storage.default_bucket is required")
-	}
-	if len(c.Storage.Providers) == 0 {
-		return fmt.Errorf("at least one storage provider is required")
-	}
+	// Providers, buckets, default_bucket and public_bucket now live in the
+	// DB platform tables (managed via the admin RPCs). YAML blocks are only
+	// read by the one-shot `migrate --seed-from-config` importer — when
+	// present they must still be well-formed.
 	for i, p := range c.Storage.Providers {
 		if p.Name == "" {
 			return fmt.Errorf("storage.providers[%d].name is required", i)

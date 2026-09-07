@@ -28,7 +28,6 @@ storage:
   upload_token_secret: ${STORAGE_SERVICE_STORAGE_UPLOAD_TOKEN_SECRET}
   # 10GB
   default_quota_bytes: ${STORAGE_SERVICE_STORAGE_DEFAULT_QUOTA_BYTES}
-  default_bucket: ${STORAGE_SERVICE_STORAGE_DEFAULT_BUCKET}
   orphan_retention: ${STORAGE_SERVICE_STORAGE_ORPHAN_RETENTION}
   # 7 days
   soft_delete_retention: ${STORAGE_SERVICE_STORAGE_SOFT_DELETE_RETENTION}
@@ -105,128 +104,12 @@ storage:
         - window: ${STORAGE_SERVICE_RATE_LIMIT_BIZ_WINDOW_1H}
           max: ${STORAGE_SERVICE_RATE_LIMIT_BIZ_MAX_1H}
 
-  providers:
-    - name: ${STORAGE_SERVICE_ALIYUN_PRIMARY_NAME}
-      vendor: ${STORAGE_SERVICE_ALIYUN_PRIMARY_VENDOR}
-      endpoint: ${STORAGE_SERVICE_ALIYUN_PRIMARY_ENDPOINT}
-      # region: cn-hangzhou
-      access_key: ${STORAGE_SERVICE_ALIYUN_PRIMARY_ACCESS_KEY}
-      secret_key: ${STORAGE_SERVICE_ALIYUN_PRIMARY_SECRET_KEY}
-      # role_arn enables STS via GetSTSCredential. Get from RAM console.
-      # Format: acs:ram::<account-id>:role/<role-name>
-      # role_arn: ${STORAGE_SERVICE_ALIYUN_PRIMARY_ROLE_ARN}
-      buckets:
-        - name: ${STORAGE_SERVICE_ALIYUN_PRIMARY_BUCKET_NAME}
-          key_prefix: ${STORAGE_SERVICE_ALIYUN_PRIMARY_BUCKET_KEY_PREFIX}
-          acl: ${STORAGE_SERVICE_ALIYUN_PRIMARY_BUCKET_ACL}
-
-    - name: ${STORAGE_SERVICE_AWS_USEAST_NAME}
-      vendor: ${STORAGE_SERVICE_AWS_USEAST_VENDOR}
-      region: ${STORAGE_SERVICE_AWS_USEAST_REGION}
-      access_key: ${STORAGE_SERVICE_AWS_USEAST_ACCESS_KEY}
-      secret_key: ${STORAGE_SERVICE_AWS_USEAST_SECRET_KEY}
-
-    # Example Aliyun OSS provider with CDN (Type A signed URL) acceleration.
-    # CDN config lives under the bucket — same provider can host multiple
-    # buckets with different CDN domains. Uncomment and fill in. Each var
-    # below must also be added to .env when you enable this provider.
-    # - name: aliyun-prod-cdn
-    #   vendor: VENDOR_ALIYUN_OSS
-    #   region: cn-hangzhou
-    #   endpoint: oss-cn-hangzhou.aliyuncs.com
-    #   access_key: ${STORAGE_SERVICE_ALIYUN_PROD_CDN_ACCESS_KEY}
-    #   secret_key: ${STORAGE_SERVICE_ALIYUN_PROD_CDN_SECRET_KEY}
-    #   role_arn: ${STORAGE_SERVICE_ALIYUN_PROD_CDN_ROLE_ARN}
-    #   buckets:
-    #     - name: photos
-    #       key_prefix: "uploads/"
-    #       acl: private
-    #       cdn:
-    #         # CDN URL signing — required for GenerateCDNURL RPC. The same key
-    #         # must be configured in the Aliyun CDN console (Domain → Access
-    #         # Control → URL Authentication → Type A → Primary Key).
-    #         domain: cdn.example.com
-    #         auth_key: ${STORAGE_SERVICE_ALIYUN_PROD_CDN_AUTH_KEY}
-
-    # Example S3 provider with CloudFront (Signed URL) acceleration. Same as
-    # above: uncomment and add the vars to .env.
-    # - name: s3-prod-cdn
-    #   vendor: VENDOR_S3_COMPATIBLE
-    #   region: us-east-1
-    #   endpoint: https://s3.amazonaws.com
-    #   access_key: ${STORAGE_SERVICE_S3_PROD_CDN_ACCESS_KEY}
-    #   secret_key: ${STORAGE_SERVICE_S3_PROD_CDN_SECRET_KEY}
-    #   buckets:
-    #     - name: photos
-    #       key_prefix: "uploads/"
-    #       acl: private
-    #       cdn:
-    #         # CloudFront signs with RSA. auth_key is a file path to the PEM
-    #         # private key. Key pair ID comes from AWS account → CloudFront →
-    #         # Key pairs. Trusted key group must be attached to the distribution.
-    #         domain: d111111abcdef8.cloudfront.net
-    #         auth_key: /etc/storage-service/cloudfront.pem
-    #         key_pair_id: ${STORAGE_SERVICE_CLOUDFRONT_KEY_PAIR_ID}
-
-    # ------------------------------------------------------------------
-    # Phase 1 vendors — not yet implemented. Configurations below will fail
-    # validation with "vendor VENDOR_X not yet implemented (coming in Phase
-    # 1)" until the corresponding provider PR lands.
-    # ------------------------------------------------------------------
-
-    # Tencent Cloud COS (Type A signed URL). Bucket name MUST include the
-    # APPID suffix (e.g. mybucket-1250000000). STS uses CAM STS — RoleARN is
-    # NOT used; leave it empty.
-    # - name: tencent-prod
-    #   vendor: VENDOR_TENCENT_COS
-    #   endpoint: cos.ap-guangzhou.myqcloud.com
-    #   region: ap-guangzhou
-    #   access_key: ${STORAGE_SERVICE_TENCENT_PROD_ACCESS_KEY}
-    #   secret_key: ${STORAGE_SERVICE_TENCENT_PROD_SECRET_KEY}
-    #   # role_arn intentionally omitted — Tencent CAM STS doesn't use it
-    #   buckets:
-    #     - name: mybucket-1250000000
-    #       key_prefix: "uploads/"
-    #       acl: private
-    #       cdn:
-    #         domain: cdn.example.com
-    #         auth_key: ${STORAGE_SERVICE_TENCENT_PROD_CDN_AUTH_KEY}
-
-    # Huawei Cloud OBS (Type A signed URL). STS uses IAM Agency — role_arn
-    # is the Agency name (NOT an ARN).
-    # - name: huawei-prod
-    #   vendor: VENDOR_HUAWEI_OBS
-    #   endpoint: obs.cn-north-4.myhuaweicloud.com
-    #   region: cn-north-4
-    #   access_key: ${STORAGE_SERVICE_HUAWEI_PROD_ACCESS_KEY}
-    #   secret_key: ${STORAGE_SERVICE_HUAWEI_PROD_SECRET_KEY}
-    #   role_arn: "storage-uploader-agency"  # Agency name from IAM console
-    #   domain_id: ${STORAGE_SERVICE_HUAWEI_PROD_DOMAIN_ID}  # Huawei account UID; required for STS via Agency
-    #   buckets:
-    #     - name: mybucket
-    #       key_prefix: "uploads/"
-    #       acl: private
-    #       cdn:
-    #         domain: cdn.example.com
-    #         auth_key: ${STORAGE_SERVICE_HUAWEI_PROD_CDN_AUTH_KEY}
-
-    # Volcengine TOS (Type A signed URL). STS uses IAM AssumeRole with TRN
-    # format. Bucket ACL is enforced via TOS PutObjectACL.
-    # - name: volcengine-prod
-    #   vendor: VENDOR_VOLCENGINE_TOS
-    #   endpoint: tos-cn-beijing.volces.com
-    #   region: cn-beijing
-    #   access_key: ${STORAGE_SERVICE_VOLC_PROD_ACCESS_KEY}
-    #   secret_key: ${STORAGE_SERVICE_VOLC_PROD_SECRET_KEY}
-    #   role_arn: "trn:iam::1000000000:role/storage-uploader"
-    #   buckets:
-    #     - name: mybucket
-    #       key_prefix: "uploads/"
-    #       acl: private
-    #       cdn:
-    #         domain: cdn.example.com
-    #         auth_key: ${STORAGE_SERVICE_VOLC_PROD_CDN_AUTH_KEY}
-
+  # Providers, buckets, default_bucket and public_bucket are NO LONGER
+  # configured here — they live in the DB platform tables and are managed
+  # via the admin RPCs / testkit web admin pages. To import existing YAML
+  # providers once:
+  #   ./storage-service migrate --seed-from-config
+  # (put the providers block back temporarily, run the seed, remove it).
 third_party:
   gid:
     mode: ${STORAGE_SERVICE_GID_MODE}

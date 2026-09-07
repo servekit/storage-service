@@ -30,5 +30,8 @@ func AllModels() []any {
 		&StorageQuota{},
 		&StorageAuditLog{},
 		&StorageUploadSession{},
+		&StorageProvider{},
+		&StorageBucket{},
+		&StorageSetting{},
 	}
 }

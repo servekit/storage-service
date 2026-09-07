@@ -21,3 +21,11 @@ var (
 	ErrContentTypeMismatch     = xerr.New("CONTENT_TYPE_MISMATCH", xerr.CategoryBadRequest, 400, "declared content type does not match the uploaded object")
 	ErrObjectACLViolation      = xerr.New("OBJECT_ACL_VIOLATION", xerr.CategoryBadRequest, 400, "uploaded object has an ACL that violates the session policy")
 )
+
+// ErrProviderHasBuckets indicates the provider still has bound buckets and
+// cannot be deleted (rebind or delete the buckets first).
+var ErrProviderHasBuckets = xerr.New("PROVIDER_HAS_BUCKETS", xerr.CategoryConflict, 409, "provider still has bound buckets")
+
+// ErrBucketHasObjects indicates the bucket still has object rows and cannot
+// be deleted or re-bound to another provider.
+var ErrBucketHasObjects = xerr.New("BUCKET_HAS_OBJECTS", xerr.CategoryConflict, 409, "bucket still has objects")

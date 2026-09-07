@@ -24,7 +24,7 @@ import (
 func (s *Service) BatchGetSTSCredential(ctx context.Context, req *storagev1.BatchGetSTSCredentialRequest) (*storagev1.BatchGetSTSCredentialResponse, error) {
 	ownerType := int32(req.GetOwner().GetOwnerType())
 	ownerID := req.GetOwner().GetOwnerId()
-	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.cfg.Storage.DefaultBucket, s.cfg.Storage.PublicBucket, req.GetVisibility())
+	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.registry.DefaultBucket(), s.registry.PublicBucket(), req.GetVisibility())
 	if err != nil {
 		return nil, err
 	}

@@ -422,10 +422,13 @@ func (s *Service) AdminListProviders(_ context.Context, _ *emptypb.Empty) (*stor
 			v = int32(storagev1.Vendor_VENDOR_UNSPECIFIED)
 		}
 		providers = append(providers, &storagev1.ProviderInfo{
-			Name:     e.Name,
-			Vendor:   storagev1.Vendor(v),
-			Endpoint: e.Endpoint,
-			Region:   e.Region,
+			Name:        e.Name,
+			Vendor:      storagev1.Vendor(v),
+			Endpoint:    e.Endpoint,
+			Region:      e.Region,
+			Disabled:    e.Disabled,
+			StsEnabled:  e.STSEnabled,
+			BucketCount: int32(e.BucketCount),
 		})
 	}
 
@@ -439,13 +442,17 @@ func (s *Service) AdminListBuckets(_ context.Context, _ *emptypb.Empty) (*storag
 
 	buckets := make([]*storagev1.BucketInfo, 0, len(entries))
 	for _, e := range entries {
-		buckets = append(buckets, &storagev1.BucketInfo{
+		bucket := &storagev1.BucketInfo{
 			Name:      e.Name,
 			Provider:  e.Provider,
 			KeyPrefix: e.KeyPrefix,
 			Acl:       conv.ACLToProto(e.ACL),
 			Vendor:    s.registry.VendorForBucket(e.Name),
-		})
+		}
+		if e.CDNDomain != "" {
+			bucket.Cdn = &storagev1.CDNConfig{Domain: e.CDNDomain}
+		}
+		buckets = append(buckets, bucket)
 	}
 
 	return &storagev1.AdminListBucketsResponse{Buckets: buckets}, nil

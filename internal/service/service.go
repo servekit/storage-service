@@ -13,6 +13,7 @@ import (
 	"github.com/servekit/storage-service/internal/service/admin"
 	"github.com/servekit/storage-service/internal/service/audit"
 	"github.com/servekit/storage-service/internal/service/file"
+	"github.com/servekit/storage-service/internal/service/platform"
 	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/service/upload"
 	"github.com/servekit/storage-service/internal/version"
@@ -88,9 +89,19 @@ func New(cfg *config.Config, opts ...option.Option) (*StorageService, error) {
 		limiter = ratelimit.NewRedisLimiter(redisClient, cfg.Storage.RateLimit)
 	}
 
-	registry, err := storage.NewRegistry(cfg.Storage.Providers)
+	// Provider registry: DB-backed platform tables (storage_providers /
+	// storage_buckets / storage_settings), rebuilt hot via the admin RPCs
+	// and the cron convergence job. YAML providers are only read by the
+	// one-shot `migrate --seed-from-config` importer.
+	registry, err := storage.NewRegistry(nil)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("init provider registry: %w", err), mgr.Stop())
+	}
+	if err := platform.LoadAndRebuild(context.Background(), db, registry, cfg.Storage.DefaultBucket, cfg.Storage.PublicBucket); err != nil {
+		// Tables not migrated yet or a corrupt row: serve an empty registry
+		// (uploads fail with clear bucket-not-found errors) instead of
+		// refusing to boot; the cron job converges once fixed.
+		slog.Error("initial platform registry load failed (empty until first refresh)", "error", err)
 	}
 
 	// Audit subpackage: owns Recorder/Event/snapshot types + the two read RPCs.
@@ -396,6 +407,45 @@ func (s *StorageService) AdminListBuckets(ctx context.Context, req *emptypb.Empt
 	return s.admin.AdminListBuckets(ctx, req)
 }
 
+// AdminCreateProvider delegates to the admin subpackage (live registry
+// rebuilds immediately on success).
+func (s *StorageService) AdminCreateProvider(ctx context.Context, req *storagev1.AdminCreateProviderRequest) (*storagev1.AdminCreateProviderResponse, error) {
+	return s.admin.AdminCreateProvider(ctx, req)
+}
+
+// AdminUpdateProvider delegates to the admin subpackage.
+func (s *StorageService) AdminUpdateProvider(ctx context.Context, req *storagev1.AdminUpdateProviderRequest) (*storagev1.AdminUpdateProviderResponse, error) {
+	return s.admin.AdminUpdateProvider(ctx, req)
+}
+
+// AdminDeleteProvider delegates to the admin subpackage (rejected while
+// buckets are still bound).
+func (s *StorageService) AdminDeleteProvider(ctx context.Context, req *storagev1.AdminDeleteProviderRequest) (*emptypb.Empty, error) {
+	return s.admin.AdminDeleteProvider(ctx, req)
+}
+
+// AdminUpsertBucket delegates to the admin subpackage (full replace;
+// rebind guarded while objects exist).
+func (s *StorageService) AdminUpsertBucket(ctx context.Context, req *storagev1.AdminUpsertBucketRequest) (*storagev1.AdminUpsertBucketResponse, error) {
+	return s.admin.AdminUpsertBucket(ctx, req)
+}
+
+// AdminDeleteBucket delegates to the admin subpackage (rejected while
+// objects exist).
+func (s *StorageService) AdminDeleteBucket(ctx context.Context, req *storagev1.AdminDeleteBucketRequest) (*emptypb.Empty, error) {
+	return s.admin.AdminDeleteBucket(ctx, req)
+}
+
+// AdminGetSettings delegates to the admin subpackage.
+func (s *StorageService) AdminGetSettings(ctx context.Context, req *storagev1.AdminGetSettingsRequest) (*storagev1.AdminGetSettingsResponse, error) {
+	return s.admin.AdminGetSettings(ctx, req)
+}
+
+// AdminUpdateSettings delegates to the admin subpackage.
+func (s *StorageService) AdminUpdateSettings(ctx context.Context, req *storagev1.AdminUpdateSettingsRequest) (*storagev1.AdminUpdateSettingsResponse, error) {
+	return s.admin.AdminUpdateSettings(ctx, req)
+}
+
 // AdminSoftDeleteOwnerFiles delegates to the admin subpackage.
 func (s *StorageService) AdminSoftDeleteOwnerFiles(ctx context.Context, req *storagev1.AdminSoftDeleteOwnerFilesRequest) (*storagev1.AdminSoftDeleteOwnerFilesResponse, error) {
 	return s.admin.AdminSoftDeleteOwnerFiles(ctx, req)
@@ -447,6 +497,18 @@ func (s *StorageService) setupJobs() error {
 		}
 	}); err != nil {
 		return fmt.Errorf("register file retention reap: %w", err)
+	}
+
+	// Platform registry convergence: cross-node admin mutations (or a
+	// failed local refresh) rebuild within a minute.
+	if err := scheduler.AddFunc("*/1 * * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := platform.LoadAndRebuild(ctx, s.db, s.registry, "", ""); err != nil {
+			slog.Error("platform registry cron refresh", "error", err)
+		}
+	}); err != nil {
+		return fmt.Errorf("register platform refresh: %w", err)
 	}
 	return nil
 }

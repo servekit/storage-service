@@ -30,3 +30,10 @@ func NewModule(cfg *config.Config, opts ...option.Option) (*Handler, error) {
 func Migrate(db *gorm.DB) error {
 	return handler.Migrate(db)
 }
+
+// SeedFromConfig imports legacy YAML providers/buckets/settings into the
+// DB platform tables (one-shot migration aid). After seeding, remove the
+// providers block from YAML — runtime reads the platform tables only.
+func SeedFromConfig(db *gorm.DB, cfg *config.Config) error {
+	return handler.SeedFromConfig(db, cfg)
+}

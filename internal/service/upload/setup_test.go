@@ -83,6 +83,9 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 	}
 	registry, err := storage.NewRegistryWithProvider(providerCfg, fp, nil)
 	require.NoError(t, err)
+	// settings live on the registry now (DB platform tables in production);
+	// mirror the fixture config's default/public buckets.
+	registry.SetSettings("uploads", "public-uploads")
 
 	gid := &seqGID{}
 	cfg := &config.Config{

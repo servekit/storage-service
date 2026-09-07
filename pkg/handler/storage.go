@@ -186,3 +186,43 @@ func (h *Handler) ListMyAuditLogs(ctx context.Context, req *storagev1.ListMyAudi
 func (h *Handler) AdminListAuditLogs(ctx context.Context, req *storagev1.AdminListAuditLogsRequest) (*storagev1.AdminListAuditLogsResponse, error) {
 	return h.svc.AdminListAuditLogs(ctx, req)
 }
+
+// --- platform management (providers / buckets / settings) ---
+
+// AdminCreateProvider adds a provider to the live registry.
+func (h *Handler) AdminCreateProvider(ctx context.Context, req *storagev1.AdminCreateProviderRequest) (*storagev1.AdminCreateProviderResponse, error) {
+	return h.svc.AdminCreateProvider(ctx, req)
+}
+
+// AdminUpdateProvider edits a provider (credentials replace-on-present).
+func (h *Handler) AdminUpdateProvider(ctx context.Context, req *storagev1.AdminUpdateProviderRequest) (*storagev1.AdminUpdateProviderResponse, error) {
+	return h.svc.AdminUpdateProvider(ctx, req)
+}
+
+// AdminDeleteProvider removes a provider (rejected while buckets are
+// still bound to it).
+func (h *Handler) AdminDeleteProvider(ctx context.Context, req *storagev1.AdminDeleteProviderRequest) (*emptypb.Empty, error) {
+	return h.svc.AdminDeleteProvider(ctx, req)
+}
+
+// AdminUpsertBucket creates or fully replaces a bucket binding.
+func (h *Handler) AdminUpsertBucket(ctx context.Context, req *storagev1.AdminUpsertBucketRequest) (*storagev1.AdminUpsertBucketResponse, error) {
+	return h.svc.AdminUpsertBucket(ctx, req)
+}
+
+// AdminDeleteBucket removes a bucket binding (rejected while objects
+// exist).
+func (h *Handler) AdminDeleteBucket(ctx context.Context, req *storagev1.AdminDeleteBucketRequest) (*emptypb.Empty, error) {
+	return h.svc.AdminDeleteBucket(ctx, req)
+}
+
+// AdminGetSettings returns the runtime settings row (default/public
+// bucket).
+func (h *Handler) AdminGetSettings(ctx context.Context, req *storagev1.AdminGetSettingsRequest) (*storagev1.AdminGetSettingsResponse, error) {
+	return h.svc.AdminGetSettings(ctx, req)
+}
+
+// AdminUpdateSettings updates the runtime settings row.
+func (h *Handler) AdminUpdateSettings(ctx context.Context, req *storagev1.AdminUpdateSettingsRequest) (*storagev1.AdminUpdateSettingsResponse, error) {
+	return h.svc.AdminUpdateSettings(ctx, req)
+}

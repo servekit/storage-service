@@ -16,7 +16,10 @@ import (
 	"github.com/servekit/storage-service/pkg/config"
 )
 
-// Registry manages storage providers and their bucket mappings.
+// Registry manages storage providers and their bucket mappings. Built
+// once at startup from the DB platform tables (or config for the seed
+// path), then hot-rebuilt on every admin mutation / cron refresh via
+// Rebuild — the RWMutex finally has a writer.
 type Registry struct {
 	mu              sync.RWMutex
 	providers       map[string]Provider
@@ -24,14 +27,23 @@ type Registry struct {
 	bucketProviders map[string]string // bucket name -> provider name
 	providerConfigs map[string]*config.ProviderConfig
 	cdnGenerators   map[string]types.CDNURLGenerator // bucket name -> generator; absent = CDN disabled for that bucket
+	disabled        map[string]bool                  // provider name -> disabled (readable, not writable)
+	// settings mirrors the storage_settings row; written by Rebuild /
+	// SetSettings, read lock-free-ish under the same mutex by the upload
+	// paths.
+	defaultBucket string
+	publicBucket  string
 }
 
 // ProviderEntry holds provider metadata for listing.
 type ProviderEntry struct {
-	Name     string
-	Vendor   string // raw config string, e.g. "VENDOR_ALIYUN_OSS"
-	Endpoint string
-	Region   string
+	Name        string
+	Vendor      string // raw config string, e.g. "VENDOR_ALIYUN_OSS"
+	Endpoint    string
+	Region      string
+	Disabled    bool
+	STSEnabled  bool // role_arn configured
+	BucketCount int
 }
 
 // BucketEntry holds bucket metadata for listing.
@@ -40,6 +52,8 @@ type BucketEntry struct {
 	Provider  string
 	KeyPrefix string
 	ACL       string
+	// CDNDomain is empty when CDN is disabled for the bucket.
+	CDNDomain string
 }
 
 // NewRegistry creates a new Registry initialized from provider configs.
@@ -53,6 +67,7 @@ func NewRegistry(providers []*config.ProviderConfig) (*Registry, error) {
 		bucketProviders: make(map[string]string),
 		providerConfigs: make(map[string]*config.ProviderConfig),
 		cdnGenerators:   make(map[string]types.CDNURLGenerator),
+		disabled:        make(map[string]bool),
 	}
 
 	for _, pc := range providers {
@@ -62,6 +77,7 @@ func NewRegistry(providers []*config.ProviderConfig) (*Registry, error) {
 		}
 		r.providers[pc.Name] = p
 		r.providerConfigs[pc.Name] = pc
+		r.disabled[pc.Name] = pc.Disabled
 
 		for _, bc := range pc.Buckets {
 			r.buckets[bc.Name] = bc
@@ -78,6 +94,103 @@ func NewRegistry(providers []*config.ProviderConfig) (*Registry, error) {
 	}
 
 	return r, nil
+}
+
+// Rebuild swaps the whole registry content from the given provider
+// configs, constructing live clients + CDN generators. It builds into
+// temporary maps first: on any construction error nothing is swapped and
+// the error is returned (the previous snapshot keeps serving). providers
+// may be nil/empty — that yields an empty (but functional) registry.
+func (r *Registry) Rebuild(providers []*config.ProviderConfig) error {
+	next := &Registry{
+		providers:       make(map[string]Provider),
+		buckets:         make(map[string]*config.BucketConfig),
+		bucketProviders: make(map[string]string),
+		providerConfigs: make(map[string]*config.ProviderConfig),
+		cdnGenerators:   make(map[string]types.CDNURLGenerator),
+		disabled:        make(map[string]bool),
+	}
+	for _, pc := range providers {
+		if pc == nil {
+			continue
+		}
+		p, err := newProvider(pc)
+		if err != nil {
+			return fmt.Errorf("create provider %q: %w", pc.Name, err)
+		}
+		next.providers[pc.Name] = p
+		next.providerConfigs[pc.Name] = pc
+		next.disabled[pc.Name] = pc.Disabled
+
+		for _, bc := range pc.Buckets {
+			next.buckets[bc.Name] = bc
+			next.bucketProviders[bc.Name] = pc.Name
+
+			if bc.CDN != nil {
+				gen, err := newCDNURLGenerator(pc.Vendor, bc.CDN)
+				if err != nil {
+					return fmt.Errorf("bucket %q: %w", bc.Name, err)
+				}
+				next.cdnGenerators[bc.Name] = gen
+			}
+		}
+	}
+
+	r.mu.Lock()
+	r.providers = next.providers
+	r.buckets = next.buckets
+	r.bucketProviders = next.bucketProviders
+	r.providerConfigs = next.providerConfigs
+	r.cdnGenerators = next.cdnGenerators
+	r.disabled = next.disabled
+	r.mu.Unlock()
+	return nil
+}
+
+// SetSettings updates the default/public bucket names served to upload
+// paths. Empty strings are valid (public = "" rejects PUBLIC uploads).
+func (r *Registry) SetSettings(defaultBucket, publicBucket string) {
+	r.mu.Lock()
+	r.defaultBucket = defaultBucket
+	r.publicBucket = publicBucket
+	r.mu.Unlock()
+}
+
+// Settings returns the current default/public bucket names.
+func (r *Registry) Settings() (defaultBucket, publicBucket string) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.defaultBucket, r.publicBucket
+}
+
+// DefaultBucket returns the bucket receiving uploads without an explicit
+// bucket (empty = such uploads fail with a clear error).
+func (r *Registry) DefaultBucket() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.defaultBucket
+}
+
+// PublicBucket returns the bucket receiving visibility=PUBLIC uploads
+// (empty = PUBLIC uploads rejected).
+func (r *Registry) PublicBucket() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.publicBucket
+}
+
+// IsBucketWritable reports whether new uploads may target the bucket: it
+// must resolve to a provider that is not disabled. Read/download paths are
+// unaffected — a disabled provider's clients keep serving existing
+// objects.
+func (r *Registry) IsBucketWritable(bucket string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	providerName, ok := r.bucketProviders[bucket]
+	if !ok {
+		return false
+	}
+	return !r.disabled[providerName]
 }
 
 // ProviderForBucket returns the Provider for the given bucket name.
@@ -158,12 +271,21 @@ func (r *Registry) AllProviders() []ProviderEntry {
 	defer r.mu.RUnlock()
 
 	entries := make([]ProviderEntry, 0, len(r.providerConfigs))
-	for _, pc := range r.providerConfigs {
+	for name, pc := range r.providerConfigs {
+		bucketCount := 0
+		for _, owner := range r.bucketProviders {
+			if owner == name {
+				bucketCount++
+			}
+		}
 		entries = append(entries, ProviderEntry{
-			Name:     pc.Name,
-			Vendor:   pc.Vendor,
-			Endpoint: pc.Endpoint,
-			Region:   pc.Region,
+			Name:        pc.Name,
+			Vendor:      pc.Vendor,
+			Endpoint:    pc.Endpoint,
+			Region:      pc.Region,
+			Disabled:    r.disabled[name],
+			STSEnabled:  pc.RoleARN != "",
+			BucketCount: bucketCount,
 		})
 	}
 	return entries
@@ -176,11 +298,16 @@ func (r *Registry) AllBuckets() []BucketEntry {
 
 	entries := make([]BucketEntry, 0, len(r.buckets))
 	for name, bc := range r.buckets {
+		cdnDomain := ""
+		if bc.CDN != nil {
+			cdnDomain = bc.CDN.Domain
+		}
 		entries = append(entries, BucketEntry{
 			Name:      name,
 			Provider:  r.bucketProviders[name],
 			KeyPrefix: bc.KeyPrefix,
 			ACL:       bc.ACL,
+			CDNDomain: cdnDomain,
 		})
 	}
 	return entries

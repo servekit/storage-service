@@ -203,7 +203,8 @@ func TestGenerateUploadURL_VisibilityPrivateKeepsBucket(t *testing.T) {
 // bad-request, not a silent private placement.
 func TestGenerateUploadURL_VisibilityPublicWithoutPublicBucket(t *testing.T) {
 	svc, _, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
-	svc.cfg.Storage.PublicBucket = ""
+	// settings live on the registry now; clear the public bucket there
+	svc.registry.SetSettings("uploads", "")
 
 	_, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 302},
