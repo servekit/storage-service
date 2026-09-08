@@ -24,6 +24,13 @@ redis:
   db: ${STORAGE_SERVICE_REDIS_DB}
 
 storage:
+  # Bootstrap app seeded by `storage-service migrate --seed-from-config`;
+  # key_prefix applies on first creation only (must end with '/').
+  bootstrap_app:
+    app_key: ${STORAGE_SERVICE_BOOTSTRAP_APP_KEY}
+    app_secret: ${STORAGE_SERVICE_BOOTSTRAP_APP_SECRET}
+    name: testkit
+    key_prefix: testkit/
   upload_token_ttl: ${STORAGE_SERVICE_STORAGE_UPLOAD_TOKEN_TTL}
   upload_token_secret: ${STORAGE_SERVICE_STORAGE_UPLOAD_TOKEN_SECRET}
   # 10GB

@@ -105,6 +105,52 @@ func SeedFromConfig(db *gorm.DB, cfg *config.Config) error {
 
 	slog.Info("seed: platform tables imported (existing names skipped)",
 		"providers", importedProviders, "buckets", importedBuckets)
+
+	if ba := cfg.Storage.BootstrapApp; ba != nil && ba.AppKey != "" {
+		if err := seedBootstrapApp(db, ba); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// seedBootstrapApp upserts the deployment's own calling app (e.g. testkit).
+// Creation applies the configured key_prefix (must end with '/'); re-runs
+// update secret/name/bucket only — the prefix is immutable once objects
+// live under it.
+func seedBootstrapApp(db *gorm.DB, ba *config.BootstrapAppConfig) error {
+	var existing models.StorageApp
+	err := db.Where("app_key = ?", ba.AppKey).Take(&existing).Error
+	switch {
+	case err == nil:
+		existing.AppSecret = ba.AppSecret
+		existing.Name = ba.Name
+		existing.BucketID = ba.BucketID
+		if existing.Name == "" {
+			existing.Name = ba.AppKey
+		}
+		if err := db.Save(&existing).Error; err != nil {
+			return xcodes.ErrInternal.Wrap(err)
+		}
+		slog.Info("seed: bootstrap app updated", "app_key", ba.AppKey)
+	case err == gorm.ErrRecordNotFound:
+		if ba.KeyPrefix == "" {
+			return xcodes.ErrBadRequest.New("bootstrap_app.key_prefix is required on first run (must end with '/')")
+		}
+		row := &models.StorageApp{
+			ID: seedNextID(db), AppKey: ba.AppKey, AppSecret: ba.AppSecret,
+			Name: ba.Name, KeyPrefix: ba.KeyPrefix, BucketID: ba.BucketID,
+		}
+		if row.Name == "" {
+			row.Name = ba.AppKey
+		}
+		if err := db.Create(row).Error; err != nil {
+			return xcodes.ErrInternal.Wrap(err)
+		}
+		slog.Info("seed: bootstrap app created", "app_key", ba.AppKey, "key_prefix", ba.KeyPrefix)
+	default:
+		return xcodes.ErrInternal.Wrap(err)
+	}
 	return nil
 }
 

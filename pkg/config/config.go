@@ -52,6 +52,12 @@ type ServerConfig struct {
 
 // StorageConfig holds storage backend settings including providers and their buckets.
 type StorageConfig struct {
+	// BootstrapApp seeds one calling app at migrate time (`migrate
+	// --seed-from-config`): the deployment's own client (e.g. testkit).
+	// Idempotent per app_key; secret/name/bucket follow the config on
+	// re-runs so compose env vars stay the source of truth.
+	BootstrapApp *BootstrapAppConfig
+
 	UploadTokenTTL    time.Duration `default:"30m"`
 	UploadTokenSecret string
 	DefaultQuotaBytes int64 `default:"10737418240"` // 10GB
@@ -435,4 +441,15 @@ func validateBucketCDN(i, j int, cdn *CDNConfig, vendor string) error {
 		}
 	}
 	return nil
+}
+
+// BootstrapAppConfig describes the migrate-time bootstrap app.
+type BootstrapAppConfig struct {
+	AppKey    string
+	AppSecret string
+	Name      string
+	// KeyPrefix is only applied at creation; existing apps keep theirs.
+	KeyPrefix string
+	// BucketID 0 = the default bucket.
+	BucketID int64
 }
