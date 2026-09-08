@@ -232,9 +232,10 @@ func TestCreateOrGetObject(t *testing.T) {
 	}
 	firstID := got.ID
 
-	// Second call with same (vendor,bucket,md5) must dedup — same row, inserted=false.
+	// Second call with the same (vendor,bucket,object_key) must dedup — same
+	// row, inserted=false.
 	dup := &models.StorageObject{
-		Vendor: 1, Bucket: "b", ObjectKey: "other-key", MD5: "md5",
+		Vendor: 1, Bucket: "b", ObjectKey: "k", MD5: "md5",
 		Size: 99, ContentType: "t", StorageClass: 1, RefCount: 0,
 	}
 	got2, inserted2, err := CreateOrGetObject(ctx, db, dup)
@@ -243,6 +244,20 @@ func TestCreateOrGetObject(t *testing.T) {
 	}
 	if got2.ID != firstID {
 		t.Fatalf("dedup returned different ID: got %d, want %d", got2.ID, firstID)
+	}
+
+	// Same md5 under a different object_key (another app's prefix) is stored
+	// independently — the prefix is the dedup domain.
+	other := &models.StorageObject{
+		Vendor: 1, Bucket: "b", ObjectKey: "other-app/k", MD5: "md5",
+		Size: 99, ContentType: "t", StorageClass: 1, RefCount: 0,
+	}
+	got3, inserted3, err := CreateOrGetObject(ctx, db, other)
+	if err != nil || !inserted3 {
+		t.Fatalf("cross-prefix call: want (obj,true,nil), got (%v,%v,%v)", got3, inserted3, err)
+	}
+	if got3.ID == firstID {
+		t.Fatalf("cross-prefix insert must create a separate row, got duplicate ID %d", got3.ID)
 	}
 }
 
