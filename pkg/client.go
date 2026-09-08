@@ -7,6 +7,7 @@ import (
 	commonv1 "github.com/servekit/api/gen/go/common/v1"
 	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 
+	"github.com/servekit/go-common/grpcx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -36,6 +37,7 @@ var _ storagev1.StorageServiceServer = (*Client)(nil)
 func NewClient(addr string, opts ...grpc.DialOption) (*Client, error) {
 	dialOpts := append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(grpcx.ForwardActorUnary()),
 	}, opts...)
 
 	conn, err := grpc.NewClient(addr, dialOpts...)
