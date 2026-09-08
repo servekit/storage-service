@@ -8,29 +8,31 @@ import (
 )
 
 var StorageAuditLog = struct {
-	ID           field.Number[int64]
-	Action       field.Number[int32]
-	OwnerType    field.Number[int32]
-	OwnerID      field.Number[int64]
-	TargetType   field.Number[int32]
-	TargetID     field.Number[int64]
-	Before       field.Field[models.JSONMap]
-	After        field.Field[models.JSONMap]
-	Status       field.Number[int32]
-	ErrorMessage field.String
-	RequestID    field.String
-	CreatedAt    field.Time
+	ID             field.Number[int64]
+	Action         field.Number[int32]
+	OwnerType      field.Number[int32]
+	OwnerID        field.Number[int64]
+	TargetType     field.Number[int32]
+	TargetID       field.Number[int64]
+	Before         field.Field[models.JSONMap]
+	After          field.Field[models.JSONMap]
+	Status         field.Number[int32]
+	ErrorMessage   field.String
+	RequestID      field.String
+	OperatorUserID field.Number[int64]
+	CreatedAt      field.Time
 }{
-	ID:           field.Number[int64]{}.WithColumn("id"),
-	Action:       field.Number[int32]{}.WithColumn("action"),
-	OwnerType:    field.Number[int32]{}.WithColumn("owner_type"),
-	OwnerID:      field.Number[int64]{}.WithColumn("owner_id"),
-	TargetType:   field.Number[int32]{}.WithColumn("target_type"),
-	TargetID:     field.Number[int64]{}.WithColumn("target_id"),
-	Before:       field.Field[models.JSONMap]{}.WithColumn("before"),
-	After:        field.Field[models.JSONMap]{}.WithColumn("after"),
-	Status:       field.Number[int32]{}.WithColumn("status"),
-	ErrorMessage: field.String{}.WithColumn("error_message"),
-	RequestID:    field.String{}.WithColumn("request_id"),
-	CreatedAt:    field.Time{}.WithColumn("created_at"),
+	ID:             field.Number[int64]{}.WithColumn("id"),
+	Action:         field.Number[int32]{}.WithColumn("action"),
+	OwnerType:      field.Number[int32]{}.WithColumn("owner_type"),
+	OwnerID:        field.Number[int64]{}.WithColumn("owner_id"),
+	TargetType:     field.Number[int32]{}.WithColumn("target_type"),
+	TargetID:       field.Number[int64]{}.WithColumn("target_id"),
+	Before:         field.Field[models.JSONMap]{}.WithColumn("before"),
+	After:          field.Field[models.JSONMap]{}.WithColumn("after"),
+	Status:         field.Number[int32]{}.WithColumn("status"),
+	ErrorMessage:   field.String{}.WithColumn("error_message"),
+	RequestID:      field.String{}.WithColumn("request_id"),
+	OperatorUserID: field.Number[int64]{}.WithColumn("operator_user_id"),
+	CreatedAt:      field.Time{}.WithColumn("created_at"),
 }

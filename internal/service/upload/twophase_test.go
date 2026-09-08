@@ -32,7 +32,7 @@ const victimMD5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 // persisted session. Fails the test on any error or instant-dedup hit.
 func requestUploadURL(t *testing.T, svc *Service, owner *storagev1.Owner, md5 string, size int64) (*storagev1.GenerateUploadURLResponse, *models.StorageUploadSession) {
 	t.Helper()
-	resp, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
+	resp, err := svc.GenerateUploadURL(appCtx(context.Background()), &storagev1.GenerateUploadURLRequest{
 		Owner: owner, Md5: md5, Size: size, Filename: "f-" + md5 + ".bin",
 	})
 	require.NoError(t, err)
@@ -47,7 +47,7 @@ func requestUploadURL(t *testing.T, svc *Service, owner *storagev1.Owner, md5 st
 // confirm drives ConfirmUpload with the given owner and raw upload token.
 func confirm(t *testing.T, svc *Service, owner *storagev1.Owner, uploadToken string) (*storagev1.ConfirmUploadResponse, error) {
 	t.Helper()
-	return svc.ConfirmUpload(context.Background(), &storagev1.ConfirmUploadRequest{
+	return svc.ConfirmUpload(appCtx(context.Background()), &storagev1.ConfirmUploadRequest{
 		Owner: owner, UploadToken: uploadToken,
 	})
 }
@@ -227,7 +227,8 @@ func TestConfirmUpload_LegacySessionFinalKeyCompat(t *testing.T) {
 	finalKey := conv.ObjectKeyFromMD5("uploads/", victimMD5)
 	legacy := &models.StorageUploadSession{
 		ID: 9001, OwnerType: 1, OwnerID: 100, Bucket: "uploads", ObjectKey: finalKey,
-		MD5: victimMD5, Size: 6, Filename: "legacy.bin", ContentType: "text/plain",
+		KeyPrefix: "uploads/",
+		MD5:       victimMD5, Size: 6, Filename: "legacy.bin", ContentType: "text/plain",
 		Vendor: 3, Status: int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_PENDING),
 		ExpiresAt: time.Now().Add(30 * time.Minute),
 	}
@@ -237,8 +238,7 @@ func TestConfirmUpload_LegacySessionFinalKeyCompat(t *testing.T) {
 
 	token := &uploadToken{
 		SessionID: legacy.ID, OwnerID: 100, OwnerType: 1,
-		MD5: victimMD5, Size: 6, ContentType: "text/plain",
-		Bucket: "uploads", Vendor: 3,
+		MD5: victimMD5, Size: 6, ContentType: "text/plain", Vendor: 3,
 		ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
 	}
 	tokenStr, err := SignTokenForTest(token, testSecret)
@@ -288,9 +288,9 @@ func TestGetSTSCredential_PolicyScopedToOwnerSandbox(t *testing.T) {
 
 	captured := installCapturingIssuer(t, svc)
 
-	_, err := svc.GetSTSCredential(context.Background(), &storagev1.GetSTSCredentialRequest{
-		Owner: owner100, Bucket: "uploads",
-		Md5: victimMD5, MaxSize: 4, ContentType: "text/plain", Filename: "a.bin",
+	_, err := svc.GetSTSCredential(appCtx(context.Background()), &storagev1.GetSTSCredentialRequest{
+		Owner: owner100,
+		Md5:   victimMD5, MaxSize: 4, ContentType: "text/plain", Filename: "a.bin",
 	})
 	require.NoError(t, err)
 	require.Len(t, *captured, 1)
@@ -313,7 +313,7 @@ func TestBatchGetSTSCredential_SharedPolicyScopedToSandbox(t *testing.T) {
 
 	captured := installCapturingIssuer(t, svc)
 
-	_, err := svc.BatchGetSTSCredential(context.Background(), &storagev1.BatchGetSTSCredentialRequest{
+	_, err := svc.BatchGetSTSCredential(appCtx(context.Background()), &storagev1.BatchGetSTSCredentialRequest{
 		Owner: owner100,
 		Files: []*storagev1.UploadFileMeta{
 			{Filename: "x.bin", Md5: victimMD5, Size: 4, ContentType: "application/octet-stream"},

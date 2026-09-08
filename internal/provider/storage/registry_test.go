@@ -57,7 +57,7 @@ func TestNewProvider_TencentDispatch(t *testing.T) {
 		SecretKey: "sk",
 		// RoleARN intentionally empty — Tencent CAM STS doesn't use it.
 		Buckets: []*config.BucketConfig{
-			{Name: "mybucket-1250000000", KeyPrefix: "uploads/", ACL: "private"},
+			{Name: "mybucket-1250000000", ACL: "private"},
 		},
 	}
 	p, err := newProvider(cfg)

@@ -157,7 +157,7 @@ func (s *Service) AdminUpsertBucket(ctx context.Context, req *storagev1.AdminUps
 		if err != nil {
 			return nil, xcodes.ErrInternal.Wrap(err)
 		}
-		b := platform.BucketRowFromConfig(req.GetName(), provider.ID, req.GetKeyPrefix(), acl, req.GetCdn())
+		b := platform.BucketRowFromConfig(req.GetName(), provider.ID, acl, req.GetCdn())
 		b.ID = id
 		if err := dal.CreateBucket(ctx, s.db, b); err != nil {
 			return nil, err
@@ -181,7 +181,6 @@ func (s *Service) AdminUpsertBucket(ctx context.Context, req *storagev1.AdminUps
 	}
 	before := bucketSnapshot(existing)
 	existing.ProviderID = provider.ID
-	existing.KeyPrefix = req.GetKeyPrefix()
 	existing.ACL = acl
 	existing.CDNDomain, existing.CDNAuthKey, existing.CDNKeyPairID = "", "", ""
 	if cdn := req.GetCdn(); cdn != nil {
@@ -212,6 +211,12 @@ func (s *Service) AdminDeleteBucket(ctx context.Context, req *storagev1.AdminDel
 	if n > 0 {
 		return nil, xcodes.ErrBucketHasObjects.New(fmt.Sprintf(
 			"bucket %q still has %d object(s); deleting the binding would dangle them", b.Name, n))
+	}
+	if apps, err := dal.CountAppsByBucketID(ctx, s.db, b.ID); err != nil {
+		return nil, err
+	} else if apps > 0 {
+		return nil, xcodes.ErrBadRequest.New(fmt.Sprintf(
+			"bucket %q is bound by %d app(s); rebind or unbind them first", b.Name, apps))
 	}
 	if err := dal.DeleteBucket(ctx, s.db, b.ID); err != nil {
 		return nil, err
@@ -337,11 +342,10 @@ func providerToProto(p *models.StorageProvider, bucketCount int32) *storagev1.Pr
 
 func (s *Service) bucketToProto(_ context.Context, b *models.StorageBucket, provider *models.StorageProvider) *storagev1.BucketInfo {
 	info := &storagev1.BucketInfo{
-		Name:      b.Name,
-		Provider:  provider.Name,
-		KeyPrefix: b.KeyPrefix,
-		Acl:       conv.ACLToProto(b.ACL),
-		Vendor:    storagev1.Vendor(provider.Vendor),
+		Name:     b.Name,
+		Provider: provider.Name,
+		Acl:      conv.ACLToProto(b.ACL),
+		Vendor:   storagev1.Vendor(provider.Vendor),
 	}
 	if b.CDNDomain != "" {
 		info.Cdn = &storagev1.CDNConfig{
@@ -371,7 +375,7 @@ func providerSnapshot(p *models.StorageProvider) map[string]any {
 func bucketSnapshot(b *models.StorageBucket) map[string]any {
 	return map[string]any{
 		"name": b.Name, "provider_id": b.ProviderID,
-		"key_prefix": b.KeyPrefix, "acl": b.ACL, "cdn_domain": b.CDNDomain,
+		"acl": b.ACL, "cdn_domain": b.CDNDomain,
 	}
 }
 

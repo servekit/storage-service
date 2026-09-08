@@ -104,29 +104,23 @@ func IsSandboxObjectKey(key, prefix string, ownerType int32, ownerID int64) bool
 	return strings.HasPrefix(key, UploadSandboxPrefix(prefix, ownerType, ownerID))
 }
 
-// ResolveBucket returns the provided bucket name if non-empty, otherwise falls
-// back to the configured default bucket.
-func ResolveBucket(bucket, defaultBucket string) string {
-	if bucket != "" {
-		return bucket
-	}
-	return defaultBucket
-}
-
-// ResolveBucketForVisibility extends ResolveBucket with the audience-class
-// mapping: visibility=PUBLIC uploads always land in the configured public
-// bucket (the caller's `bucket` field is ignored — public placement must not
-// depend on caller-supplied names), while PRIVATE / UNSPECIFIED keep the
-// legacy resolution. Returns an error when PUBLIC is requested but no public
-// bucket is configured.
-func ResolveBucketForVisibility(bucket, defaultBucket, publicBucket string, visibility storagev1.Visibility) (string, error) {
+// ResolveAppBucket maps the calling app's bucket binding and the requested
+// audience class to a bucket name: PUBLIC always lands in the configured
+// public bucket (never an app binding); otherwise the app's bound bucket,
+// falling back to the platform default when the app binds none (bucket_id 0)
+// or the binding no longer resolves. Returns an error when PUBLIC is
+// requested but no public bucket is configured.
+func ResolveAppBucket(appBucket, defaultBucket, publicBucket string, visibility storagev1.Visibility) (string, error) {
 	if visibility == storagev1.Visibility_VISIBILITY_PUBLIC {
 		if publicBucket == "" {
 			return "", xcodes.ErrBadRequest.New("visibility=PUBLIC requested but no public bucket is configured")
 		}
 		return publicBucket, nil
 	}
-	return ResolveBucket(bucket, defaultBucket), nil
+	if appBucket != "" {
+		return appBucket, nil
+	}
+	return defaultBucket, nil
 }
 
 // ProtoToImageOp converts a proto ImageProcessOp to a types.Op. Callers pass

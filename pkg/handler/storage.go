@@ -210,6 +210,36 @@ func (h *Handler) AdminUpsertBucket(ctx context.Context, req *storagev1.AdminUps
 	return h.svc.AdminUpsertBucket(ctx, req)
 }
 
+// AdminCreateApp registers a calling application (secret shown once).
+func (h *Handler) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreateAppRequest) (*storagev1.AdminCreateAppResponse, error) {
+	return h.svc.AdminCreateApp(ctx, req)
+}
+
+// AdminGetApp returns one app by app_key.
+func (h *Handler) AdminGetApp(ctx context.Context, req *storagev1.AdminGetAppRequest) (*storagev1.AdminGetAppResponse, error) {
+	return h.svc.AdminGetApp(ctx, req)
+}
+
+// AdminUpdateApp edits name/disabled/bucket; app_key and key_prefix are immutable.
+func (h *Handler) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdateAppRequest) (*storagev1.AdminUpdateAppResponse, error) {
+	return h.svc.AdminUpdateApp(ctx, req)
+}
+
+// AdminRotateAppSecret mints a new secret (shown once).
+func (h *Handler) AdminRotateAppSecret(ctx context.Context, req *storagev1.AdminRotateAppSecretRequest) (*storagev1.AdminRotateAppSecretResponse, error) {
+	return h.svc.AdminRotateAppSecret(ctx, req)
+}
+
+// AdminListApps lists all apps.
+func (h *Handler) AdminListApps(ctx context.Context, req *storagev1.AdminListAppsRequest) (*storagev1.AdminListAppsResponse, error) {
+	return h.svc.AdminListApps(ctx, req)
+}
+
+// AdminDeleteApp soft-deletes an app.
+func (h *Handler) AdminDeleteApp(ctx context.Context, req *storagev1.AdminDeleteAppRequest) (*emptypb.Empty, error) {
+	return h.svc.AdminDeleteApp(ctx, req)
+}
+
 // AdminDeleteBucket removes a bucket binding (rejected while objects
 // exist).
 func (h *Handler) AdminDeleteBucket(ctx context.Context, req *storagev1.AdminDeleteBucketRequest) (*emptypb.Empty, error) {

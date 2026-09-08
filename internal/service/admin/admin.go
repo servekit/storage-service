@@ -443,11 +443,10 @@ func (s *Service) AdminListBuckets(_ context.Context, _ *emptypb.Empty) (*storag
 	buckets := make([]*storagev1.BucketInfo, 0, len(entries))
 	for _, e := range entries {
 		bucket := &storagev1.BucketInfo{
-			Name:      e.Name,
-			Provider:  e.Provider,
-			KeyPrefix: e.KeyPrefix,
-			Acl:       conv.ACLToProto(e.ACL),
-			Vendor:    s.registry.VendorForBucket(e.Name),
+			Name:     e.Name,
+			Provider: e.Provider,
+			Acl:      conv.ACLToProto(e.ACL),
+			Vendor:   s.registry.VendorForBucket(e.Name),
 		}
 		if e.CDNDomain != "" {
 			bucket.Cdn = &storagev1.CDNConfig{Domain: e.CDNDomain}

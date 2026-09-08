@@ -18,9 +18,8 @@ import (
 func TestGetSTSCredential_ExtensionRejectedEarly(t *testing.T) {
 	svc, fp, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
 
-	_, err := svc.GetSTSCredential(context.Background(), &storagev1.GetSTSCredentialRequest{
+	_, err := svc.GetSTSCredential(appCtx(context.Background()), &storagev1.GetSTSCredentialRequest{
 		Owner:             &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:            "uploads",
 		MaxSize:           1024,
 		Md5:               "00000000000000000000000000000001",
 		ContentType:       "text/plain",
@@ -39,9 +38,8 @@ func TestGetSTSCredential_ExtensionRejectedEarly(t *testing.T) {
 func TestGetSTSCredential_ExtensionCaseInsensitiveMatch(t *testing.T) {
 	svc, _, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
 
-	_, err := svc.GetSTSCredential(context.Background(), &storagev1.GetSTSCredentialRequest{
+	_, err := svc.GetSTSCredential(appCtx(context.Background()), &storagev1.GetSTSCredentialRequest{
 		Owner:             &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:            "uploads",
 		MaxSize:           1024,
 		Md5:               "00000000000000000000000000000003",
 		ContentType:       "image/jpeg",
@@ -58,7 +56,7 @@ func TestGetSTSCredential_ExtensionCaseInsensitiveMatch(t *testing.T) {
 func TestBatchGetSTSCredential_ExtensionRejectedPerItem(t *testing.T) {
 	svc, fp, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
 
-	resp, err := svc.BatchGetSTSCredential(context.Background(), &storagev1.BatchGetSTSCredentialRequest{
+	resp, err := svc.BatchGetSTSCredential(appCtx(context.Background()), &storagev1.BatchGetSTSCredentialRequest{
 		Owner: &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 		Files: []*storagev1.UploadFileMeta{
 			{Filename: "ok.jpg", Md5: "00000000000000000000000000000001", Size: 1},
@@ -99,7 +97,7 @@ func TestBatchGetSTSCredential_ObjectKeyPopulated(t *testing.T) {
 	svc, _, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
 
 	const md5 = "00000000000000000000000000000001"
-	resp, err := svc.BatchGetSTSCredential(context.Background(), &storagev1.BatchGetSTSCredentialRequest{
+	resp, err := svc.BatchGetSTSCredential(appCtx(context.Background()), &storagev1.BatchGetSTSCredentialRequest{
 		Owner: &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 		Files: []*storagev1.UploadFileMeta{
 			{Filename: "photo.jpg", Md5: md5, Size: 1, ContentType: "image/jpeg"},
@@ -160,13 +158,12 @@ func TestIsPublicACL(t *testing.T) {
 func TestGenerateUploadURL_VisibilityPublicUsesPublicBucket(t *testing.T) {
 	svc, fp, db := setupUploadServiceWithFakeProvider(t, noopHost{})
 
-	resp, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
+	resp, err := svc.GenerateUploadURL(appCtx(context.Background()), &storagev1.GenerateUploadURLRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 300},
 		Filename:    "avatar.png",
 		Md5:         "10000000000000000000000000000001",
 		Size:        16,
-		ContentType: "image/png",
-		Bucket:      "uploads", // deliberately private; PUBLIC must override it
+		ContentType: "image/png", // deliberately private; PUBLIC must override it
 		Visibility:  storagev1.Visibility_VISIBILITY_PUBLIC,
 	})
 	require.NoError(t, err)
@@ -186,7 +183,7 @@ func TestGenerateUploadURL_VisibilityPublicUsesPublicBucket(t *testing.T) {
 func TestGenerateUploadURL_VisibilityPrivateKeepsBucket(t *testing.T) {
 	svc, _, _ := setupUploadServiceWithFakeProvider(t, noopHost{})
 
-	resp, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
+	resp, err := svc.GenerateUploadURL(appCtx(context.Background()), &storagev1.GenerateUploadURLRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 301},
 		Filename:    "doc.pdf",
 		Md5:         "10000000000000000000000000000002",
@@ -206,7 +203,7 @@ func TestGenerateUploadURL_VisibilityPublicWithoutPublicBucket(t *testing.T) {
 	// settings live on the registry now; clear the public bucket there
 	svc.registry.SetSettings("uploads", "")
 
-	_, err := svc.GenerateUploadURL(context.Background(), &storagev1.GenerateUploadURLRequest{
+	_, err := svc.GenerateUploadURL(appCtx(context.Background()), &storagev1.GenerateUploadURLRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 302},
 		Filename:    "avatar.png",
 		Md5:         "10000000000000000000000000000003",

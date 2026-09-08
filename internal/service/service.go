@@ -430,6 +430,36 @@ func (s *StorageService) AdminUpsertBucket(ctx context.Context, req *storagev1.A
 	return s.admin.AdminUpsertBucket(ctx, req)
 }
 
+// AdminCreateApp delegates to the admin subpackage.
+func (s *StorageService) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreateAppRequest) (*storagev1.AdminCreateAppResponse, error) {
+	return s.admin.AdminCreateApp(ctx, req)
+}
+
+// AdminGetApp delegates to the admin subpackage.
+func (s *StorageService) AdminGetApp(ctx context.Context, req *storagev1.AdminGetAppRequest) (*storagev1.AdminGetAppResponse, error) {
+	return s.admin.AdminGetApp(ctx, req)
+}
+
+// AdminUpdateApp delegates to the admin subpackage.
+func (s *StorageService) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdateAppRequest) (*storagev1.AdminUpdateAppResponse, error) {
+	return s.admin.AdminUpdateApp(ctx, req)
+}
+
+// AdminRotateAppSecret delegates to the admin subpackage.
+func (s *StorageService) AdminRotateAppSecret(ctx context.Context, req *storagev1.AdminRotateAppSecretRequest) (*storagev1.AdminRotateAppSecretResponse, error) {
+	return s.admin.AdminRotateAppSecret(ctx, req)
+}
+
+// AdminListApps delegates to the admin subpackage.
+func (s *StorageService) AdminListApps(ctx context.Context, req *storagev1.AdminListAppsRequest) (*storagev1.AdminListAppsResponse, error) {
+	return s.admin.AdminListApps(ctx, req)
+}
+
+// AdminDeleteApp delegates to the admin subpackage.
+func (s *StorageService) AdminDeleteApp(ctx context.Context, req *storagev1.AdminDeleteAppRequest) (*emptypb.Empty, error) {
+	return s.admin.AdminDeleteApp(ctx, req)
+}
+
 // AdminDeleteBucket delegates to the admin subpackage (rejected while
 // objects exist).
 func (s *StorageService) AdminDeleteBucket(ctx context.Context, req *storagev1.AdminDeleteBucketRequest) (*emptypb.Empty, error) {

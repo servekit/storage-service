@@ -11,6 +11,7 @@ import (
 
 	gidv1 "github.com/servekit/api/gen/go/gid/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
+	"github.com/servekit/storage-service/internal/appauth"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/store/models"
@@ -77,11 +78,12 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 		AccessKey: "ak-fake",
 		SecretKey: "sk-fake",
 		Buckets: []*config.BucketConfig{
-			{Name: "uploads", KeyPrefix: "uploads/", ACL: "private"},
-			{Name: "public-uploads", KeyPrefix: "public/", ACL: "public-read"},
+			{Name: "uploads", ACL: "private"},
+			{Name: "public-uploads", ACL: "public-read"},
 		},
 	}
 	registry, err := storage.NewRegistryWithProvider(providerCfg, fp, nil)
+	registry.SetApps([]*models.StorageApp{testApp()})
 	require.NoError(t, err)
 	// settings live on the registry now (DB platform tables in production);
 	// mirror the fixture config's default/public buckets.
@@ -111,4 +113,18 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 		Host:     host,
 	})
 	return svc, fp, db
+}
+
+// testApp is the app every data-plane test call authenticates as. Its
+// key_prefix keeps the legacy bucket prefix so key-shape assertions hold.
+func testApp() *models.StorageApp {
+	return &models.StorageApp{
+		ID: 1, AppKey: "test-app", AppSecret: "test-secret",
+		KeyPrefix: "uploads/", Name: "test app",
+	}
+}
+
+// appCtx wraps ctx with the test app credentials.
+func appCtx(ctx context.Context) context.Context {
+	return appauth.WithApp(ctx, "test-app", "test-secret")
 }

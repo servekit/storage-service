@@ -284,9 +284,11 @@ type ProviderConfig struct {
 
 // BucketConfig defines a storage bucket.
 type BucketConfig struct {
-	Name      string
-	KeyPrefix string
-	ACL       string
+	// ID is the storage_buckets row id (0 for YAML-seeded entries); the
+	// registry uses it to resolve an app's bucket binding.
+	ID   int64
+	Name string
+	ACL  string
 	// CDN is optional; nil = CDN disabled for this bucket. When set,
 	// Validate enforces Domain/AuthKey (and KeyPairID for cloudfront vendors).
 	CDN *CDNConfig

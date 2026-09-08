@@ -43,11 +43,23 @@ func TestObjectKeyFromMD5(t *testing.T) {
 	assert.Equal(t, "prefix", ObjectKeyFromMD5("prefix", ""))
 }
 
-func TestResolveBucket(t *testing.T) {
+func TestResolveAppBucket(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "explicit", ResolveBucket("explicit", "default"))
-	assert.Equal(t, "default", ResolveBucket("", "default"))
+	// App binding wins for private uploads; empty binding falls back to default.
+	got, err := ResolveAppBucket("app-bucket", "default", "public", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, "app-bucket", got)
+	got2, err2 := ResolveAppBucket("", "default", "public", 0)
+	assert.NoError(t, err2)
+	assert.Equal(t, "default", got2)
+	// PUBLIC always lands in the public bucket, never the app binding.
+	got, err = ResolveAppBucket("app-bucket", "default", "public", storagev1.Visibility_VISIBILITY_PUBLIC)
+	assert.NoError(t, err)
+	assert.Equal(t, "public", got)
+	// PUBLIC without a configured public bucket is rejected.
+	_, err = ResolveAppBucket("app-bucket", "default", "", storagev1.Visibility_VISIBILITY_PUBLIC)
+	assert.Error(t, err)
 }
 
 func TestVendorToName(t *testing.T) {

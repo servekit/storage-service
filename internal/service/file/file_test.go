@@ -225,8 +225,8 @@ func setupFileServiceWithFakeProvider(t *testing.T) (*Service, *fake.FakeProvide
 		Endpoint: "http://fake-endpoint",
 		Region:   "us-east-1",
 		Buckets: []*config.BucketConfig{
-			{Name: "uploads", KeyPrefix: "uploads/", ACL: "private"},
-			{Name: "assets", KeyPrefix: "assets/", ACL: "public_read"},
+			{Name: "uploads", ACL: "private"},
+			{Name: "assets", ACL: "public_read"},
 		},
 	}
 	registry, err := storage.NewRegistryWithProvider(providerCfg, fp, nil)

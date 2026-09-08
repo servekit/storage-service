@@ -186,19 +186,16 @@ func TestAdminListBuckets(t *testing.T) {
 	b1, ok := byName["uploads"]
 	require.True(t, ok, "uploads bucket should exist")
 	assert.Equal(t, "minio-local", b1.Provider)
-	assert.Equal(t, "uploads/", b1.KeyPrefix)
 	assert.Equal(t, storagev1.BucketACL_BUCKET_ACL_PRIVATE, b1.Acl)
 
 	b2, ok := byName["assets"]
 	require.True(t, ok, "assets bucket should exist")
 	assert.Equal(t, "minio-local", b2.Provider)
-	assert.Equal(t, "assets/", b2.KeyPrefix)
 	assert.Equal(t, storagev1.BucketACL_BUCKET_ACL_PUBLIC_READ, b2.Acl)
 
 	b3, ok := byName["backups"]
 	require.True(t, ok, "backups bucket should exist")
 	assert.Equal(t, "wasabi-backup", b3.Provider)
-	assert.Equal(t, "backup/", b3.KeyPrefix)
 	assert.Equal(t, storagev1.BucketACL_BUCKET_ACL_PUBLIC_READ_WRITE, b3.Acl)
 }
 
@@ -230,8 +227,8 @@ func newTestRegistry(t *testing.T) *storage.Registry {
 			AccessKey: "test-access",
 			SecretKey: "test-secret",
 			Buckets: []*config.BucketConfig{
-				{Name: "uploads", KeyPrefix: "uploads/", ACL: "private"},
-				{Name: "assets", KeyPrefix: "assets/", ACL: "public_read"},
+				{Name: "uploads", ACL: "private"},
+				{Name: "assets", ACL: "public_read"},
 			},
 		},
 		{
@@ -242,7 +239,7 @@ func newTestRegistry(t *testing.T) *storage.Registry {
 			AccessKey: "test-access-2",
 			SecretKey: "test-secret-2",
 			Buckets: []*config.BucketConfig{
-				{Name: "backups", KeyPrefix: "backup/", ACL: "public_read_write"},
+				{Name: "backups", ACL: "public_read_write"},
 			},
 		},
 	}

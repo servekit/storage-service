@@ -163,12 +163,7 @@ func (s *Service) ReapExpiredSessions(ctx context.Context) (int, error) {
 		// key directly (globally deduped, possibly shared with live objects) —
 		// leave both the object and the row untouched; they are one deploy's
 		// worth of history and re-scanning them is harmless.
-		bucketCfg, cfgErr := s.registry.BucketConfig(sess.Bucket)
-		if cfgErr != nil {
-			slog.Error("upload gc: resolve bucket config for settled session", "session_id", sess.ID, "bucket", sess.Bucket, "error", cfgErr)
-			continue
-		}
-		if !conv.IsSandboxObjectKey(sess.ObjectKey, bucketCfg.KeyPrefix, sess.OwnerType, sess.OwnerID) {
+		if !conv.IsSandboxObjectKey(sess.ObjectKey, sess.KeyPrefix, sess.OwnerType, sess.OwnerID) {
 			continue
 		}
 		p, pErr := s.registry.ProviderForBucket(sess.Bucket)

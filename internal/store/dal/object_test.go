@@ -169,23 +169,23 @@ func TestGetObjectByID(t *testing.T) {
 	}
 }
 
-// TestFindObjectByVendorBucketMD5 verifies (found, true) and (nil, false) shapes.
-func TestFindObjectByVendorBucketMD5(t *testing.T) {
+// TestFindObjectByVendorBucketObjectKey verifies (found, true) and (nil, false) shapes.
+func TestFindObjectByVendorBucketObjectKey(t *testing.T) {
 	db := setupObjectTestDB(t)
 	ctx := context.Background()
 	seedObjects(t, db, []models.StorageObject{
 		{Vendor: 1, Bucket: "b", ObjectKey: "k1", MD5: "md5-1", Size: 1, ContentType: "t", StorageClass: 1, RefCount: 0},
 	})
 
-	got, found, err := FindObjectByVendorBucketMD5(ctx, db, 1, "b", "md5-1")
+	got, found, err := FindObjectByVendorBucketObjectKey(ctx, db, 1, "b", "k1")
 	if err != nil || !found {
 		t.Fatalf("want (found,true,nil), got (%v,%v,%v)", got, found, err)
 	}
-	if got.MD5 != "md5-1" {
-		t.Fatalf("MD5 mismatch: %q", got.MD5)
+	if got.ObjectKey != "k1" {
+		t.Fatalf("object key mismatch: %q", got.ObjectKey)
 	}
 
-	if _, found, err := FindObjectByVendorBucketMD5(ctx, db, 1, "b", "missing"); err != nil || found {
+	if _, found, err := FindObjectByVendorBucketObjectKey(ctx, db, 1, "b", "missing"); err != nil || found {
 		t.Fatalf("want (nil,false,nil) for missing, got (%v,%v,%v)", nil, found, err)
 	}
 }

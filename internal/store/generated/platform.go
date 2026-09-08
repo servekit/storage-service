@@ -40,7 +40,6 @@ var StorageBucket = struct {
 	ID           field.Number[int64]
 	Name         field.String
 	ProviderID   field.Number[int64]
-	KeyPrefix    field.String
 	ACL          field.String
 	CDNDomain    field.String
 	CDNAuthKey   field.String
@@ -52,7 +51,6 @@ var StorageBucket = struct {
 	ID:           field.Number[int64]{}.WithColumn("id"),
 	Name:         field.String{}.WithColumn("name"),
 	ProviderID:   field.Number[int64]{}.WithColumn("provider_id"),
-	KeyPrefix:    field.String{}.WithColumn("key_prefix"),
 	ACL:          field.String{}.WithColumn("acl"),
 	CDNDomain:    field.String{}.WithColumn("cdn_domain"),
 	CDNAuthKey:   field.String{}.WithColumn("cdn_auth_key"),
@@ -60,6 +58,30 @@ var StorageBucket = struct {
 	CreatedAt:    field.Time{}.WithColumn("created_at"),
 	UpdatedAt:    field.Time{}.WithColumn("updated_at"),
 	DeletedAt:    field.Time{}.WithColumn("deleted_at"),
+}
+
+var StorageApp = struct {
+	ID        field.Number[int64]
+	AppKey    field.String
+	AppSecret field.String
+	Name      field.String
+	KeyPrefix field.String
+	BucketID  field.Number[int64]
+	Disabled  field.Bool
+	CreatedAt field.Time
+	UpdatedAt field.Time
+	DeletedAt field.Time
+}{
+	ID:        field.Number[int64]{}.WithColumn("id"),
+	AppKey:    field.String{}.WithColumn("app_key"),
+	AppSecret: field.String{}.WithColumn("app_secret"),
+	Name:      field.String{}.WithColumn("name"),
+	KeyPrefix: field.String{}.WithColumn("key_prefix"),
+	BucketID:  field.Number[int64]{}.WithColumn("bucket_id"),
+	Disabled:  field.Bool{}.WithColumn("disabled"),
+	CreatedAt: field.Time{}.WithColumn("created_at"),
+	UpdatedAt: field.Time{}.WithColumn("updated_at"),
+	DeletedAt: field.Time{}.WithColumn("deleted_at"),
 }
 
 var StorageSetting = struct {

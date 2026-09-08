@@ -32,6 +32,7 @@ func AllModels() []any {
 		&StorageUploadSession{},
 		&StorageProvider{},
 		&StorageBucket{},
+		&StorageApp{},
 		&StorageSetting{},
 	}
 }

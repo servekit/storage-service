@@ -16,6 +16,11 @@ import (
 // deleted — the client may still be uploading and a delete would race with
 // the in-flight PUT. GC reclaims orphaned objects later.
 func (s *Service) CancelUpload(ctx context.Context, req *storagev1.CancelUploadRequest) (*emptypb.Empty, error) {
+	app, err := s.authenticateApp(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_ = app
 	ownerType := int32(req.GetOwner().GetOwnerType())
 	ownerID := req.GetOwner().GetOwnerId()
 

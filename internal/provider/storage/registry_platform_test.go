@@ -18,7 +18,7 @@ func testProviderConfig(name, bucket string) *config.ProviderConfig {
 		AccessKey: "ak",
 		SecretKey: "sk",
 		Buckets: []*config.BucketConfig{
-			{Name: bucket, KeyPrefix: "prefix/", ACL: "private"},
+			{Name: bucket, ACL: "private"},
 		},
 	}
 }
@@ -33,7 +33,7 @@ func TestRebuildSwapsContent(t *testing.T) {
 	assert.True(t, r.IsBucketWritable("b1"))
 
 	// hot rebuild replaces the whole content
-	require.NoError(t, r.Rebuild([]*config.ProviderConfig{testProviderConfig("p2", "b2")}))
+	require.NoError(t, r.Rebuild([]*config.ProviderConfig{testProviderConfig("p2", "b2")}, nil))
 	_, err = r.ProviderForBucket("b1")
 	assert.Error(t, err, "old bucket must be gone after rebuild")
 	p, err = r.ProviderForBucket("b2")
@@ -47,7 +47,7 @@ func TestRebuildErrorKeepsPreviousSnapshot(t *testing.T) {
 
 	bad := testProviderConfig("p2", "b2")
 	bad.Vendor = "VENDOR_DOES_NOT_EXIST"
-	err = r.Rebuild([]*config.ProviderConfig{bad})
+	err = r.Rebuild([]*config.ProviderConfig{bad}, nil)
 	require.Error(t, err)
 
 	// previous snapshot still serves

@@ -17,6 +17,7 @@ import (
 
 	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
+	"github.com/servekit/storage-service/internal/appauth"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 	"github.com/servekit/storage-service/internal/service/conv"
@@ -186,11 +187,43 @@ func New(d *Deps) *Service {
 	}
 }
 
+// authenticateApp resolves the calling app from x-app-key/x-app-secret
+// metadata against the registry snapshot. Mirrors message-service: the check
+// runs in the service layer (not an interceptor) so module-mode in-process
+// callers share the exact same path. Fail-closed on missing credentials,
+// unknown/disabled app, or secret mismatch.
+func (s *Service) authenticateApp(ctx context.Context) (*models.StorageApp, error) {
+	appKey, appSecret, ok := appauth.Credentials(ctx)
+	if !ok {
+		return nil, xcodes.ErrAppUnauthorized.New("missing app credentials")
+	}
+	app := s.registry.App(appKey)
+	if app == nil || app.Disabled {
+		return nil, xcodes.ErrAppUnauthorized.New(fmt.Sprintf("app %q not found or disabled", appKey))
+	}
+	if app.AppSecret != appSecret {
+		return nil, xcodes.ErrAppUnauthorized.New("bad app credentials")
+	}
+	return app, nil
+}
+
+// appBucket maps the app's bucket binding + requested audience class to a
+// bucket name (see conv.ResolveAppBucket).
+func (s *Service) appBucket(app *models.StorageApp, visibility storagev1.Visibility) (string, error) {
+	return conv.ResolveAppBucket(
+		s.registry.BucketNameByID(app.BucketID),
+		s.registry.DefaultBucket(), s.registry.PublicBucket(), visibility)
+}
+
 // GenerateUploadURL reserves quota, creates an upload session row, and returns
 // either a direct upload URL or STS credentials (depending on provider) so the
 // client can push the object to object storage. Enforces per-owner upload rate
 // limits.
 func (s *Service) GenerateUploadURL(ctx context.Context, req *storagev1.GenerateUploadURLRequest) (*storagev1.GenerateUploadURLResponse, error) {
+	app, err := s.authenticateApp(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ownerType := int32(req.GetOwner().GetOwnerType())
 	ownerID := req.GetOwner().GetOwnerId()
 
@@ -202,7 +235,7 @@ func (s *Service) GenerateUploadURL(ctx context.Context, req *storagev1.Generate
 		return nil, xcodes.ErrQuotaExceeded.Wrap(checkErr)
 	}
 
-	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.registry.DefaultBucket(), s.registry.PublicBucket(), req.GetVisibility())
+	bucket, err := s.appBucket(app, req.GetVisibility())
 	if err != nil {
 		return nil, err
 	}
@@ -222,14 +255,17 @@ func (s *Service) GenerateUploadURL(ctx context.Context, req *storagev1.Generate
 	}
 	isPublic := isPublicBucketACL(bucketCfg.ACL)
 
-	// Check MD5 dedup: if same file already exists, create UserFile instantly.
+	// Check dedup within the app's namespace: the content-addressed key embeds
+	// the app key_prefix, so an identical file under this prefix returns an
+	// instant File, while another app's copy stays private to it.
 	vendor := int32(s.registry.VendorForBucket(bucket))
-	existing, found, findErr := dal.FindObjectByVendorBucketMD5(ctx, s.db, vendor, bucket, req.GetMd5())
+	dedupKey := conv.ObjectKeyFromMD5(app.KeyPrefix, req.GetMd5())
+	existing, found, findErr := dal.FindObjectByVendorBucketObjectKey(ctx, s.db, vendor, bucket, dedupKey)
 	if findErr != nil {
 		return nil, xcodes.ErrInternal.Wrap(findErr)
 	}
 	if found {
-		fileInfo, txErr := s.handleInstantUpload(ctx, ownerType, ownerID, existing, req.GetFilename(), req.GetFilePath(), req.GetDescription(), req.GetMetadata(), isPublic, req.GetRequestId())
+		fileInfo, txErr := s.handleInstantUpload(ctx, app.AppKey, ownerType, ownerID, existing, req.GetFilename(), req.GetFilePath(), req.GetDescription(), req.GetMetadata(), isPublic, req.GetRequestId())
 		if txErr != nil {
 			return nil, txErr
 		}
@@ -250,7 +286,7 @@ func (s *Service) GenerateUploadURL(ctx context.Context, req *storagev1.Generate
 		ttl = 30 * time.Minute
 	}
 
-	prepared, prepErr := s.prepareUpload(ctx, ownerType, ownerID, bucket, ttl, fileMeta{
+	prepared, prepErr := s.prepareUpload(ctx, app, ownerType, ownerID, bucket, ttl, fileMeta{
 		md5:         req.GetMd5(),
 		filename:    req.GetFilename(),
 		contentType: req.GetContentType(),
@@ -303,6 +339,10 @@ func (s *Service) GenerateUploadURL(ctx context.Context, req *storagev1.Generate
 // No rate limit: the upload URL was already rate-limited at issue time;
 // confirm only creates the DB record.
 func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploadRequest) (*storagev1.ConfirmUploadResponse, error) {
+	app, err := s.authenticateApp(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ownerType := int32(req.GetOwner().GetOwnerType())
 	ownerID := req.GetOwner().GetOwnerId()
 
@@ -317,6 +357,12 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 		// Legacy pre-session token: reject so callers refresh.
 		return nil, xcodes.ErrUploadTokenInvalid.New("legacy token without session_id; please fetch a new one")
 	}
+	// The issuing app settles its own sessions — one app can never confirm
+	// another app's in-flight upload. Pre-app tokens carry an empty AppKey
+	// and are settled by any app (one deploy's worth of history).
+	if token.AppKey != "" && token.AppKey != app.AppKey {
+		return nil, xcodes.ErrUploadTokenInvalid.New("token was issued to a different app")
+	}
 
 	session, err := dal.GetUploadSessionByID(ctx, s.db, token.SessionID)
 	if err != nil {
@@ -328,6 +374,9 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 	// against the persisted session row.
 	if session.OwnerID != token.OwnerID || session.OwnerType != token.OwnerType || session.MD5 != token.MD5 || session.Size != token.Size {
 		return nil, xcodes.ErrUploadTokenInvalid.New("session/token mismatch")
+	}
+	if session.AppKey != "" && session.AppKey != token.AppKey {
+		return nil, xcodes.ErrUploadTokenInvalid.New("session/token app mismatch")
 	}
 
 	// Idempotent: session already confirmed in a previous ConfirmUpload call.
@@ -426,13 +475,14 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 	}
 
 	// Two-phase landing: the client wrote to the unguessable staging key
-	// (session.ObjectKey). Derive the content-addressed final key from the live
-	// bucket prefix and move the verified bytes there server-side — clients
-	// never hold a credential for a final key, so confirmed objects cannot be
-	// overwritten through the upload path. Legacy sessions minted before the
-	// two-phase flow carry the final key directly; for those the copy is a
-	// no-op (source == destination).
-	finalKey := conv.ObjectKeyFromMD5(confirmBucketCfg.KeyPrefix, session.MD5)
+	// (session.ObjectKey). Derive the content-addressed final key from the
+	// issuing app's prefix (snapshotted on the session) and move the verified
+	// bytes there server-side — clients never hold a credential for a final
+	// key, so confirmed objects cannot be overwritten through the upload path.
+	// Pre-app sessions carry an empty prefix; for them the derivation equals
+	// the legacy unprefixed key. Sessions minted before the two-phase flow
+	// carry the final key directly; for those the copy is a no-op.
+	finalKey := conv.ObjectKeyFromMD5(session.KeyPrefix, session.MD5)
 	finalInfo := info
 	if session.ObjectKey != finalKey {
 		finalInfo, err = ensureFinalObject(ctx, p, session.Bucket, session.ObjectKey, finalKey, session.MD5)
@@ -485,6 +535,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 			OwnerType:   ownerType,
 			OwnerID:     ownerID,
 			ObjectID:    createdObj.ID,
+			AppKey:      session.AppKey,
 			Filename:    session.Filename,
 			FilePath:    session.FilePath,
 			Description: session.Description,
@@ -613,6 +664,10 @@ func ensureFinalObject(ctx context.Context, p storage.Provider, bucket, stagingK
 // supported (or where the client prefers STS). Enforces the same per-owner
 // upload rate limit as GenerateUploadURL.
 func (s *Service) GetSTSCredential(ctx context.Context, req *storagev1.GetSTSCredentialRequest) (*storagev1.GetSTSCredentialResponse, error) {
+	app, err := s.authenticateApp(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ownerType := int32(req.GetOwner().GetOwnerType())
 	ownerID := req.GetOwner().GetOwnerId()
 
@@ -620,7 +675,7 @@ func (s *Service) GetSTSCredential(ctx context.Context, req *storagev1.GetSTSCre
 		return nil, err
 	}
 
-	bucket, err := conv.ResolveBucketForVisibility(req.GetBucket(), s.registry.DefaultBucket(), s.registry.PublicBucket(), req.GetVisibility())
+	bucket, err := s.appBucket(app, req.GetVisibility())
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +706,7 @@ func (s *Service) GetSTSCredential(ctx context.Context, req *storagev1.GetSTSCre
 		requestID:   req.GetRequestId(),
 	}
 
-	result, err := s.issueUploadCredential(ctx, ownerType, ownerID, bucket, ttl, file)
+	result, err := s.issueUploadCredential(ctx, app, ownerType, ownerID, bucket, ttl, file)
 	if err != nil {
 		return nil, err
 	}
@@ -680,7 +735,7 @@ func (s *Service) GetSTSCredential(ctx context.Context, req *storagev1.GetSTSCre
 //
 // Returns either an instant File or the signed token + the session + bucket
 // config the caller needs to finish its provider-specific step (Presign or STS).
-func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID int64, bucket string, ttl time.Duration, file fileMeta) (*prepareResult, error) {
+func (s *Service) prepareUpload(ctx context.Context, app *models.StorageApp, ownerType int32, ownerID int64, bucket string, ttl time.Duration, file fileMeta) (*prepareResult, error) {
 	// Resolve ttl once so the session expiry, upload_token expiry, and any
 	// subsequent credential (STS / presigned URL) all share the same value.
 	// sts would otherwise silently substitute its default for ttl=0, leaving
@@ -696,8 +751,9 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 
 	vendor := int32(s.registry.VendorForBucket(bucket))
 
-	// 1. MD5 dedup
-	existing, found, err := dal.FindObjectByVendorBucketMD5(ctx, s.db, vendor, bucket, file.md5)
+	// 1. MD5 dedup within the app's namespace (object_key embeds the prefix).
+	dedupKey := conv.ObjectKeyFromMD5(app.KeyPrefix, file.md5)
+	existing, found, err := dal.FindObjectByVendorBucketObjectKey(ctx, s.db, vendor, bucket, dedupKey)
 	if err != nil {
 		return nil, xcodes.ErrInternal.Wrap(err)
 	}
@@ -709,7 +765,7 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 	isPublic := isPublicBucketACL(bucketCfg.ACL)
 
 	if found {
-		fileInfo, txErr := s.handleInstantUpload(ctx, ownerType, ownerID, existing, file.filename, file.filePath, file.description, file.metadata, isPublic, file.requestID)
+		fileInfo, txErr := s.handleInstantUpload(ctx, app.AppKey, ownerType, ownerID, existing, file.filename, file.filePath, file.description, file.metadata, isPublic, file.requestID)
 		if txErr != nil {
 			return nil, txErr
 		}
@@ -721,7 +777,7 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 	// MD5 alone, so a credential for it would let any caller overwrite an
 	// already-confirmed object with the same hash. ConfirmUpload verifies the
 	// staged bytes and copies them to the final key server-side.
-	objectKey, keyErr := conv.NewTempObjectKey(bucketCfg.KeyPrefix, ownerType, ownerID, file.md5)
+	objectKey, keyErr := conv.NewTempObjectKey(app.KeyPrefix, ownerType, ownerID, file.md5)
 	if keyErr != nil {
 		return nil, xcodes.ErrInternal.Wrap(keyErr)
 	}
@@ -732,7 +788,7 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 	}
 
 	// 3. session dedup + create
-	session, err := s.findOrCreateSession(ctx, ownerType, ownerID, vendor, bucket, objectKey, file, ttl)
+	session, err := s.findOrCreateSession(ctx, app, ownerType, ownerID, vendor, bucket, objectKey, file, ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -745,6 +801,7 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 		SessionID:   session.ID,
 		OwnerID:     ownerID,
 		OwnerType:   ownerType,
+		AppKey:      app.AppKey,
 		MD5:         file.md5,
 		Size:        file.size,
 		ContentType: file.contentType,
@@ -765,7 +822,6 @@ func (s *Service) prepareUpload(ctx context.Context, ownerType int32, ownerID in
 		instant:     false,
 		token:       tokenStr,
 		session:     session,
-		bucketCfg:   bucketCfg,
 		vendor:      vendor,
 		resolvedTTL: ttl,
 	}, nil
@@ -780,7 +836,6 @@ type prepareResult struct {
 	fileInfo    *storagev1.UserFileInfo
 	token       string
 	session     *models.StorageUploadSession
-	bucketCfg   *config.BucketConfig
 	vendor      int32
 	resolvedTTL time.Duration
 }
@@ -789,8 +844,8 @@ type prepareResult struct {
 //
 //	1-4. shared prepareUpload prelude (dedup/quota/session/token)
 //	5. STS credential (cached per owner+vendor+bucket)
-func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ownerID int64, bucket string, ttl time.Duration, file fileMeta) (*issueResult, error) {
-	prepared, err := s.prepareUpload(ctx, ownerType, ownerID, bucket, ttl, file)
+func (s *Service) issueUploadCredential(ctx context.Context, app *models.StorageApp, ownerType int32, ownerID int64, bucket string, ttl time.Duration, file fileMeta) (*issueResult, error) {
+	prepared, err := s.prepareUpload(ctx, app, ownerType, ownerID, bucket, ttl, file)
 	if err != nil {
 		return nil, err
 	}
@@ -811,7 +866,7 @@ func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ow
 		// server-chosen temp key with no file extension, so extension-shaped
 		// resource patterns ("<prefix>/*.jpg") can never match it. Extension
 		// policy is enforced at issue time by validateFilenameExtension instead.
-		KeyPrefix:      conv.UploadSandboxPrefix(prepared.bucketCfg.KeyPrefix, ownerType, ownerID),
+		KeyPrefix:      conv.UploadSandboxPrefix(app.KeyPrefix, ownerType, ownerID),
 		AllowedActions: []string{types.PutObjectActionForVendor(prepared.vendor)},
 		MaxSize:        file.size,
 		TTL:            prepared.resolvedTTL,
@@ -863,7 +918,7 @@ func (s *Service) issueUploadCredential(ctx context.Context, ownerType int32, ow
 // two callers race past FindPendingDedup, both may Create a PENDING session
 // (duplicates expire via TTL). Accepted for DB portability — the former
 // partial-unique-index backstop was postgres/sqlite only (mysql has none).
-func (s *Service) findOrCreateSession(ctx context.Context, ownerType int32, ownerID int64, vendor int32, bucket, objectKey string, file fileMeta, ttl time.Duration) (*models.StorageUploadSession, error) {
+func (s *Service) findOrCreateSession(ctx context.Context, app *models.StorageApp, ownerType int32, ownerID int64, vendor int32, bucket, objectKey string, file fileMeta, ttl time.Duration) (*models.StorageUploadSession, error) {
 	if s.lock != nil {
 		target := dedupLockTarget(ownerType, ownerID, file.md5, file.size)
 		lockID, lockErr := s.lock.Acquire(ctx, target)
@@ -907,6 +962,8 @@ func (s *Service) findOrCreateSession(ctx context.Context, ownerType int32, owne
 		OwnerID:     ownerID,
 		Bucket:      bucket,
 		ObjectKey:   objectKey,
+		AppKey:      app.AppKey,
+		KeyPrefix:   app.KeyPrefix,
 		MD5:         file.md5,
 		Size:        file.size,
 		ContentType: file.contentType,
@@ -949,7 +1006,7 @@ func (s *Service) findOrCreateSession(ctx context.Context, ownerType int32, owne
 
 // handleInstantUpload performs the instant upload (MD5 dedup hit) inside a transaction.
 // requestID is forwarded to the audit log; pass the caller's req.GetRequestId().
-func (s *Service) handleInstantUpload(ctx context.Context, ownerType int32, ownerID int64, existing *models.StorageObject, filename, filePath, description string, metadata map[string]string, isPublic bool, requestID string) (*storagev1.UserFileInfo, error) {
+func (s *Service) handleInstantUpload(ctx context.Context, appKey string, ownerType int32, ownerID int64, existing *models.StorageObject, filename, filePath, description string, metadata map[string]string, isPublic bool, requestID string) (*storagev1.UserFileInfo, error) {
 	if checkErr := s.host.CheckQuota(ctx, s.db, ownerType, ownerID, existing.Size); checkErr != nil {
 		return nil, xcodes.ErrQuotaExceeded.Wrap(checkErr)
 	}
@@ -960,6 +1017,7 @@ func (s *Service) handleInstantUpload(ctx context.Context, ownerType int32, owne
 			OwnerType:   ownerType,
 			OwnerID:     ownerID,
 			ObjectID:    existing.ID,
+			AppKey:      appKey,
 			Filename:    filename,
 			FilePath:    filePath,
 			Description: description,

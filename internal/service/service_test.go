@@ -19,6 +19,7 @@ import (
 	gidv1 "github.com/servekit/api/gen/go/gid/v1"
 	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
+	"github.com/servekit/storage-service/internal/appauth"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
@@ -123,8 +124,8 @@ func newTestRegistry(t *testing.T) *storage.Registry {
 			AccessKey: "test-access",
 			SecretKey: "test-secret",
 			Buckets: []*config.BucketConfig{
-				{Name: "uploads", KeyPrefix: "uploads/", ACL: "private"},
-				{Name: "assets", KeyPrefix: "assets/", ACL: "public_read"},
+				{Name: "uploads", ACL: "private"},
+				{Name: "assets", ACL: "public_read"},
 			},
 		},
 		{
@@ -135,14 +136,31 @@ func newTestRegistry(t *testing.T) *storage.Registry {
 			AccessKey: "test-access-2",
 			SecretKey: "test-secret-2",
 			Buckets: []*config.BucketConfig{
-				{Name: "backups", KeyPrefix: "backup/", ACL: "public_read_write"},
+				{Name: "backups", ACL: "public_read_write"},
 			},
 		},
 	}
 
 	registry, err := storage.NewRegistry(cfg)
 	require.NoError(t, err, "NewRegistry should succeed with s3_compatible provider")
+	registry.SetApps([]*models.StorageApp{testApp()})
+	registry.SetSettings("uploads", "assets")
 	return registry
+}
+
+// testApp is the app every data-plane test call authenticates as. Its
+// key_prefix keeps the legacy default-bucket prefix so key-shape assertions
+// in this suite hold unchanged.
+func testApp() *models.StorageApp {
+	return &models.StorageApp{
+		ID: 1, AppKey: "test-app", AppSecret: "test-secret",
+		KeyPrefix: "uploads/", Name: "test app",
+	}
+}
+
+// appCtx wraps ctx with the test app credentials.
+func appCtx(ctx context.Context) context.Context {
+	return appauth.WithApp(ctx, "test-app", "test-secret")
 }
 
 // setupManagerForTest initializes the lifecycle.Manager field for a directly
@@ -269,7 +287,6 @@ func setupServiceWithFakeProvider(t *testing.T) *StorageService {
 			SecretKey:       "sk-fake",
 			SecurityToken:   "st-fake",
 			Endpoint:        "http://fake-endpoint",
-			Bucket:          "uploads",
 			ObjectKeyPrefix: "uploads/",
 			ExpiresAt:       time.Now().Add(30 * time.Minute),
 		},
@@ -281,9 +298,8 @@ func setupServiceWithFakeProvider(t *testing.T) *StorageService {
 func TestGetSTSCredential_CreatesSession(t *testing.T) {
 	svc := setupServiceWithFakeProvider(t)
 
-	resp, err := svc.GetSTSCredential(context.Background(), &storagev1.GetSTSCredentialRequest{
+	resp, err := svc.GetSTSCredential(appCtx(context.Background()), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     1024,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -326,17 +342,16 @@ func TestGetSTSCredential_DedupReuseSession(t *testing.T) {
 
 	req := &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 200},
-		Bucket:      "uploads",
 		MaxSize:     2048,
 		Md5:         "00000000000000000000000000000002",
 		ContentType: "text/plain",
 		Filename:    "b.txt",
 	}
 
-	resp1, err := svc.GetSTSCredential(context.Background(), req)
+	resp1, err := svc.GetSTSCredential(appCtx(context.Background()), req)
 	require.NoError(t, err)
 
-	resp2, err := svc.GetSTSCredential(context.Background(), req)
+	resp2, err := svc.GetSTSCredential(appCtx(context.Background()), req)
 	require.NoError(t, err)
 
 	tok1, err := upload.VerifyTokenForTest(resp1.GetUploadToken(), svc.cfg.Storage.UploadTokenSecret, 200, 1)
@@ -357,7 +372,6 @@ func TestGetSTSCredential_TTLFromRequest(t *testing.T) {
 			SecretKey:       "sk",
 			SecurityToken:   "st",
 			Endpoint:        "http://e",
-			Bucket:          "uploads",
 			ObjectKeyPrefix: "uploads/",
 			ExpiresAt:       time.Now().Add(time.Hour),
 		},
@@ -367,9 +381,8 @@ func TestGetSTSCredential_TTLFromRequest(t *testing.T) {
 		MaxTTL:     time.Hour,
 	})
 
-	resp, err := svc.GetSTSCredential(context.Background(), &storagev1.GetSTSCredentialRequest{
+	resp, err := svc.GetSTSCredential(appCtx(context.Background()), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 300},
-		Bucket:      "uploads",
 		MaxSize:     512,
 		Md5:         "00000000000000000000000000000003",
 		ContentType: "text/plain",
@@ -390,10 +403,9 @@ var _ gidservice.Service = (*seqGID)(nil)
 func TestBatchGetSTSCredential_AllSucceed(t *testing.T) {
 	svc := setupServiceWithFakeProvider(t)
 
-	resp, err := svc.BatchGetSTSCredential(context.Background(), &storagev1.BatchGetSTSCredentialRequest{
-		Owner:  &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket: "uploads",
-		Ttl:    durationpb.New(15 * time.Minute),
+	resp, err := svc.BatchGetSTSCredential(appCtx(context.Background()), &storagev1.BatchGetSTSCredentialRequest{
+		Owner: &storagev1.Owner{OwnerType: 1, OwnerId: 100},
+		Ttl:   durationpb.New(15 * time.Minute),
 		Files: []*storagev1.UploadFileMeta{
 			{Md5: "00000000000000000000000000000001", Size: 100, Filename: "a.txt", ContentType: "text/plain"},
 			{Md5: "00000000000000000000000000000002", Size: 100, Filename: "b.txt", ContentType: "text/plain"},
@@ -430,10 +442,9 @@ func TestBatchGetSTSCredential_PartialFailure(t *testing.T) {
 	// Tight quota: 150 bytes total, 0 used -> 150 available.
 	require.NoError(t, svc.quota.SetQuota(ctx, svc.db, int32(ownerType), ownerID, 150))
 
-	resp, err := svc.BatchGetSTSCredential(ctx, &storagev1.BatchGetSTSCredentialRequest{
-		Owner:  &storagev1.Owner{OwnerType: ownerType, OwnerId: ownerID},
-		Bucket: "uploads",
-		Ttl:    durationpb.New(15 * time.Minute),
+	resp, err := svc.BatchGetSTSCredential(appCtx(ctx), &storagev1.BatchGetSTSCredentialRequest{
+		Owner: &storagev1.Owner{OwnerType: ownerType, OwnerId: ownerID},
+		Ttl:   durationpb.New(15 * time.Minute),
 		Files: []*storagev1.UploadFileMeta{
 			{Md5: "00000000000000000000000000000001", Size: 100, Filename: "fits.txt", ContentType: "text/plain"},
 			{Md5: "00000000000000000000000000000002", Size: 200, Filename: "too-big.txt", ContentType: "text/plain"},
@@ -464,7 +475,6 @@ func TestBatchGetSTSCredential_SharedSTSCredential(t *testing.T) {
 			SecretKey:       "sk-batch",
 			SecurityToken:   "st-batch",
 			Endpoint:        "http://batch",
-			Bucket:          "uploads",
 			ObjectKeyPrefix: "uploads/",
 			ExpiresAt:       time.Now().Add(30 * time.Minute),
 		},
@@ -485,11 +495,10 @@ func TestBatchGetSTSCredential_SharedSTSCredential(t *testing.T) {
 		})
 	}
 
-	resp, err := svc.BatchGetSTSCredential(context.Background(), &storagev1.BatchGetSTSCredentialRequest{
-		Owner:  &storagev1.Owner{OwnerType: 1, OwnerId: 200},
-		Bucket: "uploads",
-		Ttl:    durationpb.New(15 * time.Minute),
-		Files:  files,
+	resp, err := svc.BatchGetSTSCredential(appCtx(context.Background()), &storagev1.BatchGetSTSCredentialRequest{
+		Owner: &storagev1.Owner{OwnerType: 1, OwnerId: 200},
+		Ttl:   durationpb.New(15 * time.Minute),
+		Files: files,
 	})
 	require.NoError(t, err)
 	require.Len(t, resp.GetItems(), n)
@@ -507,10 +516,9 @@ func TestBatchGetSTSCredential_TooManyFiles(t *testing.T) {
 		{Md5: "00000000000000000000000000000003", Size: 100, Filename: "c.txt", ContentType: "text/plain"},
 	}
 
-	_, err := svc.BatchGetSTSCredential(context.Background(), &storagev1.BatchGetSTSCredentialRequest{
-		Owner:  &storagev1.Owner{OwnerType: 1, OwnerId: 300},
-		Bucket: "uploads",
-		Files:  files,
+	_, err := svc.BatchGetSTSCredential(appCtx(context.Background()), &storagev1.BatchGetSTSCredentialRequest{
+		Owner: &storagev1.Owner{OwnerType: 1, OwnerId: 300},
+		Files: files,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "FILE_BATCH_TOO_LARGE")
@@ -519,10 +527,9 @@ func TestBatchGetSTSCredential_TooManyFiles(t *testing.T) {
 func TestBatchGetSTSCredential_EmptyFiles(t *testing.T) {
 	svc := setupServiceWithFakeProvider(t)
 
-	_, err := svc.BatchGetSTSCredential(context.Background(), &storagev1.BatchGetSTSCredentialRequest{
-		Owner:  &storagev1.Owner{OwnerType: 1, OwnerId: 400},
-		Bucket: "uploads",
-		Files:  nil,
+	_, err := svc.BatchGetSTSCredential(appCtx(context.Background()), &storagev1.BatchGetSTSCredentialRequest{
+		Owner: &storagev1.Owner{OwnerType: 1, OwnerId: 400},
+		Files: nil,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "BAD_REQUEST")
@@ -554,7 +561,6 @@ func setupServiceWithFakeObjectProvider(t *testing.T) (*StorageService, *fake.Fa
 		SecretKey:       "sk-fake",
 		SecurityToken:   "st-fake",
 		Endpoint:        "http://fake-endpoint",
-		Bucket:          "uploads",
 		ObjectKeyPrefix: "uploads/",
 		ExpiresAt:       time.Now().Add(30 * time.Minute),
 	})
@@ -567,7 +573,7 @@ func setupServiceWithFakeObjectProvider(t *testing.T) (*StorageService, *fake.Fa
 		AccessKey: "ak-fake",
 		SecretKey: "sk-fake",
 		Buckets: []*config.BucketConfig{
-			{Name: "uploads", KeyPrefix: "uploads/", ACL: "private"},
+			{Name: "uploads", ACL: "private"},
 		},
 	}
 	registry, err := storage.NewRegistryWithProvider(providerCfg, fp, map[string]types.CDNURLGenerator{
@@ -591,6 +597,8 @@ func setupServiceWithFakeObjectProvider(t *testing.T) (*StorageService, *fake.Fa
 			},
 		},
 	}
+	registry.SetApps([]*models.StorageApp{testApp()})
+	registry.SetSettings("uploads", "assets")
 
 	svc := &StorageService{
 		db:       db,
@@ -629,9 +637,8 @@ func TestConfirmUpload_Idempotent(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Issue token (creates session).
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -650,7 +657,7 @@ func TestConfirmUpload_Idempotent(t *testing.T) {
 	fakeUploadToProvider(fp, "uploads", session.ObjectKey, []byte("data"), "00000000000000000000000000000001", session.ContentType)
 
 	// 3. First confirm.
-	r1, err := svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	r1, err := svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -659,7 +666,7 @@ func TestConfirmUpload_Idempotent(t *testing.T) {
 	require.NotZero(t, fileID)
 
 	// 4. Second confirm — same token, must return same FileID without creating a new file.
-	r2, err := svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	r2, err := svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -691,7 +698,7 @@ func TestConfirmUpload_LegacyTokenRejected(t *testing.T) {
 	tokStr, err := upload.SignTokenForTest(tok, svc.cfg.Storage.UploadTokenSecret)
 	require.NoError(t, err)
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: tokStr,
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -703,9 +710,8 @@ func TestConfirmUpload_SessionTokenMismatch(t *testing.T) {
 	svc, fp := setupServiceWithFakeObjectProvider(t)
 	ctx := context.Background()
 
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -727,7 +733,7 @@ func TestConfirmUpload_SessionTokenMismatch(t *testing.T) {
 	tamperedStr, err := upload.SignTokenForTest(&tampered, svc.cfg.Storage.UploadTokenSecret)
 	require.NoError(t, err)
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: tamperedStr,
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -739,9 +745,8 @@ func TestConfirmUpload_ExpiredSession(t *testing.T) {
 	svc, fp := setupServiceWithFakeObjectProvider(t)
 	ctx := context.Background()
 
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -760,7 +765,7 @@ func TestConfirmUpload_ExpiredSession(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, claimed, "MarkExpired must claim a PENDING session on first CAS")
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -777,9 +782,8 @@ func TestConfirmUpload_ContentTypeMismatch(t *testing.T) {
 	svc, fp := setupServiceWithFakeObjectProvider(t)
 	ctx := context.Background()
 
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -797,7 +801,7 @@ func TestConfirmUpload_ContentTypeMismatch(t *testing.T) {
 	fakeUploadToProvider(fp, "uploads", session.ObjectKey, []byte("data"),
 		"00000000000000000000000000000001", "image/jpeg")
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -812,9 +816,8 @@ func TestConfirmUpload_ContentTypeCaseInsensitive(t *testing.T) {
 	svc, fp := setupServiceWithFakeObjectProvider(t)
 	ctx := context.Background()
 
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -830,7 +833,7 @@ func TestConfirmUpload_ContentTypeCaseInsensitive(t *testing.T) {
 	fakeUploadToProvider(fp, "uploads", session.ObjectKey, []byte("data"),
 		"00000000000000000000000000000001", "TEXT/PLAIN")
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -846,9 +849,8 @@ func TestConfirmUpload_ObjectACLViolation(t *testing.T) {
 	svc, fp := setupServiceWithFakeObjectProvider(t)
 	ctx := context.Background()
 
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -868,7 +870,7 @@ func TestConfirmUpload_ObjectACLViolation(t *testing.T) {
 		"00000000000000000000000000000001", session.ContentType)
 	fp.SetObjectACL("uploads", session.ObjectKey, "public-read")
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -883,9 +885,8 @@ func TestConfirmUpload_PrivateACLPasses(t *testing.T) {
 	svc, fp := setupServiceWithFakeObjectProvider(t)
 	ctx := context.Background()
 
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -902,7 +903,7 @@ func TestConfirmUpload_PrivateACLPasses(t *testing.T) {
 		"00000000000000000000000000000001", session.ContentType)
 	fp.SetObjectACL("uploads", session.ObjectKey, "private")
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -923,9 +924,8 @@ func TestGenerateUploadURL_ConfirmRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Generate pre-signed upload URL (also mints the upload_token).
-	resp, err := svc.GenerateUploadURL(ctx, &storagev1.GenerateUploadURLRequest{
+	resp, err := svc.GenerateUploadURL(appCtx(ctx), &storagev1.GenerateUploadURLRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		Size:        4,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -948,7 +948,7 @@ func TestGenerateUploadURL_ConfirmRoundTrip(t *testing.T) {
 	fakeUploadToProvider(fp, "uploads", session.ObjectKey, []byte("data"), "00000000000000000000000000000001", session.ContentType)
 
 	// 4. Confirm — must succeed and create a File row.
-	confirm, err := svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	confirm, err := svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: resp.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -961,9 +961,8 @@ func TestCancelUpload_PendingThenCancel(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Issue token (creates session in PENDING).
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     100,
 		Md5:         "00000000000000000000000000000001",
 		ContentType: "text/plain",
@@ -972,7 +971,7 @@ func TestCancelUpload_PendingThenCancel(t *testing.T) {
 	require.NoError(t, err)
 
 	// 2. Cancel.
-	_, err = svc.CancelUpload(ctx, &storagev1.CancelUploadRequest{
+	_, err = svc.CancelUpload(appCtx(ctx), &storagev1.CancelUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -991,9 +990,8 @@ func TestCancelUpload_AlreadyConfirmed(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Issue + simulate upload + confirm.
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     4,
 		Md5:         "00000000000000000000000000000002",
 		ContentType: "text/plain",
@@ -1010,14 +1008,14 @@ func TestCancelUpload_AlreadyConfirmed(t *testing.T) {
 	// Simulate OSS upload.
 	fakeUploadToProvider(fp, "uploads", session.ObjectKey, []byte("data"), "00000000000000000000000000000002", session.ContentType)
 
-	_, err = svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	_, err = svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
 	require.NoError(t, err)
 
 	// 2. Now cancel — should fail because session is CONFIRMED (not PENDING).
-	_, err = svc.CancelUpload(ctx, &storagev1.CancelUploadRequest{
+	_, err = svc.CancelUpload(appCtx(ctx), &storagev1.CancelUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -1324,9 +1322,8 @@ func TestUpload_FullFlow(t *testing.T) {
 	md5Hex := firstMD5Hex("data")
 
 	// 1. Issue (creates PENDING session + caches STS).
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     int64(len("data")),
 		Md5:         md5Hex,
 		ContentType: "text/plain",
@@ -1347,7 +1344,7 @@ func TestUpload_FullFlow(t *testing.T) {
 	fakeUploadToProvider(fp, "uploads", session.ObjectKey, []byte("data"), md5Hex, session.ContentType)
 
 	// 4. Confirm (PENDING → CONFIRMED).
-	r1, err := svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	r1, err := svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -1356,7 +1353,7 @@ func TestUpload_FullFlow(t *testing.T) {
 	require.NotZero(t, fileID)
 
 	// 5. Re-confirm: idempotent, returns same FileID.
-	r2, err := svc.ConfirmUpload(ctx, &storagev1.ConfirmUploadRequest{
+	r2, err := svc.ConfirmUpload(appCtx(ctx), &storagev1.ConfirmUploadRequest{
 		UploadToken: creds.GetUploadToken(),
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
 	})
@@ -1390,9 +1387,8 @@ func TestUpload_GCFlow(t *testing.T) {
 	md5Hex := firstMD5Hex("gc-data")
 
 	// 1. Issue token (creates session).
-	creds, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+	creds, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 		Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 100},
-		Bucket:      "uploads",
 		MaxSize:     int64(len("gc-data")),
 		Md5:         md5Hex,
 		ContentType: "text/plain",
@@ -1450,7 +1446,7 @@ func TestMD5Dedup_VendorDiscrimination(t *testing.T) {
 	md5Hex := firstMD5Hex("same-content")
 
 	// Insert object with vendor=1, bucket="uploads" via CreateOrGet (repo's
-	// only insert path; the unique index (vendor,bucket,md5) scopes dedup).
+	// only insert path; (vendor,bucket,object_key) scopes dedup).
 	obj1 := &models.StorageObject{
 		ID:           1001,
 		Vendor:       1,
@@ -1466,19 +1462,19 @@ func TestMD5Dedup_VendorDiscrimination(t *testing.T) {
 	require.True(t, inserted, "first insert should create a new row")
 	assert.Equal(t, int64(1001), got.ID)
 
-	// Same MD5+bucket, same vendor → returns the existing one (no new row).
-	existing, found, err := dal.FindObjectByVendorBucketMD5(ctx, svc.db, 1, "uploads", md5Hex)
+	// Same object_key+bucket, same vendor → returns the existing one (no new row).
+	existing, found, err := dal.FindObjectByVendorBucketObjectKey(ctx, svc.db, 1, "uploads", "uploads/"+md5Hex)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, int64(1001), existing.ID)
 
-	// Same MD5+bucket, DIFFERENT vendor (2) → not found.
-	_, found2, err := dal.FindObjectByVendorBucketMD5(ctx, svc.db, 2, "uploads", md5Hex)
+	// Same object_key+bucket, DIFFERENT vendor (2) → not found.
+	_, found2, err := dal.FindObjectByVendorBucketObjectKey(ctx, svc.db, 2, "uploads", "uploads/"+md5Hex)
 	require.NoError(t, err)
 	assert.False(t, found2, "different vendor should not match")
 
-	// Same MD5+vendor, different bucket → not found.
-	_, found3, err := dal.FindObjectByVendorBucketMD5(ctx, svc.db, 1, "other-bucket", md5Hex)
+	// Same key, different bucket → not found.
+	_, found3, err := dal.FindObjectByVendorBucketObjectKey(ctx, svc.db, 1, "other-bucket", "uploads/"+md5Hex)
 	require.NoError(t, err)
 	assert.False(t, found3, "different bucket should not match")
 }
@@ -1510,9 +1506,8 @@ func TestGetSTSCredential_ConcurrentDedup(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			resp, err := svc.GetSTSCredential(ctx, &storagev1.GetSTSCredentialRequest{
+			resp, err := svc.GetSTSCredential(appCtx(ctx), &storagev1.GetSTSCredentialRequest{
 				Owner:       &storagev1.Owner{OwnerType: 1, OwnerId: 200},
-				Bucket:      "uploads",
 				MaxSize:     int64(len("concurrent")),
 				Md5:         md5Hex,
 				ContentType: "text/plain",

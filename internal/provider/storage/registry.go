@@ -13,6 +13,7 @@ import (
 	"github.com/servekit/storage-service/internal/provider/storage/tencent"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 	"github.com/servekit/storage-service/internal/provider/storage/volcengine"
+	"github.com/servekit/storage-service/internal/store/models"
 	"github.com/servekit/storage-service/pkg/config"
 )
 
@@ -24,7 +25,9 @@ type Registry struct {
 	mu              sync.RWMutex
 	providers       map[string]Provider
 	buckets         map[string]*config.BucketConfig
-	bucketProviders map[string]string // bucket name -> provider name
+	bucketsByID     map[int64]*config.BucketConfig
+	bucketProviders map[string]string             // bucket name -> provider name
+	apps            map[string]*models.StorageApp // app_key -> live app
 	providerConfigs map[string]*config.ProviderConfig
 	cdnGenerators   map[string]types.CDNURLGenerator // bucket name -> generator; absent = CDN disabled for that bucket
 	disabled        map[string]bool                  // provider name -> disabled (readable, not writable)
@@ -48,10 +51,9 @@ type ProviderEntry struct {
 
 // BucketEntry holds bucket metadata for listing.
 type BucketEntry struct {
-	Name      string
-	Provider  string
-	KeyPrefix string
-	ACL       string
+	Name     string
+	Provider string
+	ACL      string
 	// CDNDomain is empty when CDN is disabled for the bucket.
 	CDNDomain string
 }
@@ -64,10 +66,12 @@ func NewRegistry(providers []*config.ProviderConfig) (*Registry, error) {
 	r := &Registry{
 		providers:       make(map[string]Provider),
 		buckets:         make(map[string]*config.BucketConfig),
+		bucketsByID:     make(map[int64]*config.BucketConfig),
 		bucketProviders: make(map[string]string),
 		providerConfigs: make(map[string]*config.ProviderConfig),
 		cdnGenerators:   make(map[string]types.CDNURLGenerator),
 		disabled:        make(map[string]bool),
+		apps:            make(map[string]*models.StorageApp),
 	}
 
 	for _, pc := range providers {
@@ -81,6 +85,9 @@ func NewRegistry(providers []*config.ProviderConfig) (*Registry, error) {
 
 		for _, bc := range pc.Buckets {
 			r.buckets[bc.Name] = bc
+			if bc.ID != 0 {
+				r.bucketsByID[bc.ID] = bc
+			}
 			r.bucketProviders[bc.Name] = pc.Name
 
 			if bc.CDN != nil {
@@ -97,18 +104,21 @@ func NewRegistry(providers []*config.ProviderConfig) (*Registry, error) {
 }
 
 // Rebuild swaps the whole registry content from the given provider
-// configs, constructing live clients + CDN generators. It builds into
-// temporary maps first: on any construction error nothing is swapped and
-// the error is returned (the previous snapshot keeps serving). providers
-// may be nil/empty — that yields an empty (but functional) registry.
-func (r *Registry) Rebuild(providers []*config.ProviderConfig) error {
+// configs and live app rows, constructing live clients + CDN generators.
+// It builds into temporary maps first: on any construction error nothing is
+// swapped and the error is returned (the previous snapshot keeps serving).
+// providers may be nil/empty — that yields an empty (but functional)
+// registry; apps likewise.
+func (r *Registry) Rebuild(providers []*config.ProviderConfig, apps []*models.StorageApp) error {
 	next := &Registry{
 		providers:       make(map[string]Provider),
 		buckets:         make(map[string]*config.BucketConfig),
+		bucketsByID:     make(map[int64]*config.BucketConfig),
 		bucketProviders: make(map[string]string),
 		providerConfigs: make(map[string]*config.ProviderConfig),
 		cdnGenerators:   make(map[string]types.CDNURLGenerator),
 		disabled:        make(map[string]bool),
+		apps:            make(map[string]*models.StorageApp),
 	}
 	for _, pc := range providers {
 		if pc == nil {
@@ -124,6 +134,9 @@ func (r *Registry) Rebuild(providers []*config.ProviderConfig) error {
 
 		for _, bc := range pc.Buckets {
 			next.buckets[bc.Name] = bc
+			if bc.ID != 0 {
+				next.bucketsByID[bc.ID] = bc
+			}
 			next.bucketProviders[bc.Name] = pc.Name
 
 			if bc.CDN != nil {
@@ -136,15 +149,59 @@ func (r *Registry) Rebuild(providers []*config.ProviderConfig) error {
 		}
 	}
 
+	for _, a := range apps {
+		if a == nil {
+			continue
+		}
+		next.apps[a.AppKey] = a
+	}
+
 	r.mu.Lock()
 	r.providers = next.providers
 	r.buckets = next.buckets
+	r.bucketsByID = next.bucketsByID
 	r.bucketProviders = next.bucketProviders
 	r.providerConfigs = next.providerConfigs
 	r.cdnGenerators = next.cdnGenerators
 	r.disabled = next.disabled
+	r.apps = next.apps
 	r.mu.Unlock()
 	return nil
+}
+
+// App returns the live app row for app_key (nil when absent — callers fail
+// closed on the data plane). Disabled apps are returned with their Disabled
+// flag set; the auth check rejects them.
+func (r *Registry) App(appKey string) *models.StorageApp {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.apps[appKey]
+}
+
+// SetApps replaces the app snapshot without rebuilding providers. Test /
+// bootstrap aid — production refreshes go through Rebuild.
+func (r *Registry) SetApps(apps []*models.StorageApp) {
+	r.mu.Lock()
+	next := make(map[string]*models.StorageApp, len(apps))
+	for _, a := range apps {
+		if a != nil {
+			next[a.AppKey] = a
+		}
+	}
+	r.apps = next
+	r.mu.Unlock()
+}
+
+// BucketNameByID resolves an app's bucket binding to a bucket name.
+// Unbound (0) or unknown ids return "" — the caller falls back to the
+// default bucket.
+func (r *Registry) BucketNameByID(id int64) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if bc, ok := r.bucketsByID[id]; ok {
+		return bc.Name
+	}
+	return ""
 }
 
 // SetSettings updates the default/public bucket names served to upload
@@ -305,7 +362,6 @@ func (r *Registry) AllBuckets() []BucketEntry {
 		entries = append(entries, BucketEntry{
 			Name:      name,
 			Provider:  r.bucketProviders[name],
-			KeyPrefix: bc.KeyPrefix,
 			ACL:       bc.ACL,
 			CDNDomain: cdnDomain,
 		})
@@ -483,9 +539,11 @@ func NewRegistryWithProvider(cfg *config.ProviderConfig, p Provider, cdnGenerato
 	r := &Registry{
 		providers:       map[string]Provider{cfg.Name: p},
 		buckets:         map[string]*config.BucketConfig{},
+		bucketsByID:     map[int64]*config.BucketConfig{},
 		bucketProviders: map[string]string{},
 		providerConfigs: map[string]*config.ProviderConfig{cfg.Name: cfg},
 		cdnGenerators:   make(map[string]types.CDNURLGenerator),
+		apps:            make(map[string]*models.StorageApp),
 	}
 	for _, bc := range cfg.Buckets {
 		r.buckets[bc.Name] = bc

@@ -35,11 +35,15 @@ type StorageProvider struct {
 
 // StorageBucket binds a bucket to a provider. CDN columns are the flattened
 // CDNConfig; empty cdn_domain = CDN disabled for the bucket.
+//
+// Key prefixes no longer live here — they belong to apps
+// (StorageApp.KeyPrefix). The legacy key_prefix column is left dormant in
+// the database (AutoMigrate does not drop columns); existing objects keep
+// their stored object keys and stay readable.
 type StorageBucket struct {
 	ID         int64  `gorm:"primaryKey"`
 	Name       string `gorm:"size:255;uniqueIndex;not null"`
 	ProviderID int64  `gorm:"column:provider_id;index;not null"`
-	KeyPrefix  string `gorm:"column:key_prefix;size:256"`
 	// ACL is the config-string form ("private" | "public-read") — the same
 	// vocabulary the upload path already matches on.
 	ACL string `gorm:"size:32;not null;default:private"`
@@ -50,6 +54,27 @@ type StorageBucket struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	DeletedAt    gorm.DeletedAt `gorm:"index"`
+}
+
+// StorageApp is one calling application of the storage platform. Data-plane
+// RPCs authenticate with (app_key, app_secret) metadata; every object the
+// app writes lives under its globally-unique key_prefix, which is also the
+// dedup domain. Mirrors message-service's MessageApp pattern (secret stored
+// PLAINTEXT — internal-trust posture).
+type StorageApp struct {
+	ID        int64  `gorm:"primaryKey"`
+	AppKey    string `gorm:"column:app_key;size:64;uniqueIndex;not null"`
+	AppSecret string `gorm:"column:app_secret;size:128;not null"`
+	Name      string `gorm:"size:128;not null"`
+	// KeyPrefix namespaces every object the app writes; immutable, ends '/'.
+	KeyPrefix string `gorm:"column:key_prefix;size:64;uniqueIndex;not null"`
+	// BucketID selects the app's private bucket; 0 = the default bucket.
+	BucketID int64 `gorm:"column:bucket_id;not null;default:0"`
+	// Disabled apps fail every data-plane call immediately.
+	Disabled  bool           `gorm:"not null;default:false"`
+	CreatedAt time.Time      `gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt time.Time      `gorm:"column:updated_at;not null;autoUpdateTime"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 // StorageSetting is the single runtime settings row (ID = 1): default and

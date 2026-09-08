@@ -21,9 +21,12 @@ import (
 // the issue-time IsPublic for audit/verification, but the token itself has
 // no need to.
 type uploadToken struct {
-	SessionID   int64             `json:"sid,omitempty"`
-	OwnerID     int64             `json:"oid"`
-	OwnerType   int32             `json:"ot"`
+	SessionID int64 `json:"sid,omitempty"`
+	OwnerID   int64 `json:"oid"`
+	OwnerType int32 `json:"ot"`
+	// AppKey pins the issuing app; confirm/cancel cross-check it against the
+	// authenticated caller so one app can never settle another app's session.
+	AppKey      string            `json:"app,omitempty"`
 	MD5         string            `json:"md5"`
 	Size        int64             `json:"sz"`
 	ContentType string            `json:"ct"`

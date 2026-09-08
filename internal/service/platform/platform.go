@@ -1,6 +1,6 @@
 // Package platform loads the DB platform tables (providers, buckets,
-// settings) and rebuilds the live storage Registry from them. Called at
-// startup, after every admin mutation, and by the cron convergence job.
+// apps, settings) and rebuilds the live storage Registry from them. Called
+// at startup, after every admin mutation, and by the cron convergence job.
 package platform
 
 import (
@@ -28,7 +28,11 @@ func LoadAndRebuild(ctx context.Context, db *gorm.DB, reg *storage.Registry, fal
 	if err != nil {
 		return err
 	}
-	if err := reg.Rebuild(providers); err != nil {
+	apps, err := dal.ListApps(ctx, db)
+	if err != nil {
+		return fmt.Errorf("platform: list apps: %w", err)
+	}
+	if err := reg.Rebuild(providers, apps); err != nil {
 		return fmt.Errorf("platform: rebuild registry: %w", err)
 	}
 	settings, err := dal.GetSettings(ctx, db)
@@ -63,6 +67,8 @@ func LoadProviders(ctx context.Context, db *gorm.DB) ([]*config.ProviderConfig, 
 	for _, b := range buckets {
 		bucketsByProvider[b.ProviderID] = append(bucketsByProvider[b.ProviderID], bucketRowToConfig(b))
 	}
+	// (bucket ids ride on BucketConfig.ID so the registry can resolve app
+	// bucket bindings; see bucketRowToConfig.)
 
 	out := make([]*config.ProviderConfig, 0, len(rows))
 	for _, p := range rows {
@@ -86,9 +92,9 @@ func LoadProviders(ctx context.Context, db *gorm.DB) ([]*config.ProviderConfig, 
 // bucketRowToConfig flattens the CDN columns back into config shapes.
 func bucketRowToConfig(b *models.StorageBucket) *config.BucketConfig {
 	bc := &config.BucketConfig{
-		Name:      b.Name,
-		KeyPrefix: b.KeyPrefix,
-		ACL:       b.ACL,
+		ID:   b.ID,
+		Name: b.Name,
+		ACL:  b.ACL,
 	}
 	if b.CDNDomain != "" {
 		bc.CDN = &config.CDNConfig{
@@ -102,11 +108,10 @@ func bucketRowToConfig(b *models.StorageBucket) *config.BucketConfig {
 
 // BucketRowFromConfig converts an admin payload's bucket shape into a DB
 // row (ProviderID resolved by the caller).
-func BucketRowFromConfig(name string, providerID int64, keyPrefix, acl string, cdn *storagev1.CDNConfig) *models.StorageBucket {
+func BucketRowFromConfig(name string, providerID int64, acl string, cdn *storagev1.CDNConfig) *models.StorageBucket {
 	b := &models.StorageBucket{
 		Name:       name,
 		ProviderID: providerID,
-		KeyPrefix:  keyPrefix,
 		ACL:        acl,
 	}
 	if cdn != nil {

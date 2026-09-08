@@ -70,7 +70,7 @@ func SeedFromConfig(db *gorm.DB, cfg *config.Config) error {
 			}
 			row := &models.StorageBucket{
 				ID: seedNextID(db), Name: bc.Name, ProviderID: providerID,
-				KeyPrefix: bc.KeyPrefix, ACL: bc.ACL,
+				ACL: bc.ACL,
 			}
 			if bc.CDN != nil {
 				row.CDNDomain = bc.CDN.Domain

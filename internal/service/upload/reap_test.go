@@ -26,8 +26,9 @@ func TestReapExpiredSessions_OrphanCleanup(t *testing.T) {
 		ID:          1,
 		OwnerType:   1,
 		OwnerID:     100,
+		ObjectKey:   "uploads/tmp/1-100/x/00000000000000000000000000000001",
 		Bucket:      "uploads",
-		ObjectKey:   "uploads/abc",
+		KeyPrefix:   "uploads/",
 		MD5:         "00000000000000000000000000000001",
 		Size:        10,
 		Filename:    "a.txt",
@@ -40,13 +41,13 @@ func TestReapExpiredSessions_OrphanCleanup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Simulate client having uploaded to OSS (orphan).
-	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/abc", []byte("data"), "text/plain", "00000000000000000000000000000001")
-	require.True(t, fp.ObjectExists("uploads", "uploads/abc"), "precondition: object must exist")
+	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/tmp/1-100/x/00000000000000000000000000000001", []byte("data"), "text/plain", "00000000000000000000000000000001")
+	require.True(t, fp.ObjectExists("uploads", "uploads/tmp/1-100/x/00000000000000000000000000000001"), "precondition: object must exist")
 
 	deleted, err := svc.ReapExpiredSessions(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 1, deleted, "one orphan should be deleted")
-	assert.False(t, fp.ObjectExists("uploads", "uploads/abc"), "object should be deleted from fake provider")
+	assert.False(t, fp.ObjectExists("uploads", "uploads/tmp/1-100/x/00000000000000000000000000000001"), "object should be deleted from fake provider")
 
 	// Verify session is now EXPIRED.
 	s, err := dal.GetUploadSessionByID(ctx, db, 1)
@@ -64,8 +65,9 @@ func TestReapExpiredSessions_NoUploadSkipsDelete(t *testing.T) {
 		ID:          2,
 		OwnerType:   1,
 		OwnerID:     100,
+		ObjectKey:   "uploads/tmp/1-100/x/00000000000000000000000000000002",
 		Bucket:      "uploads",
-		ObjectKey:   "uploads/never-uploaded",
+		KeyPrefix:   "uploads/",
 		MD5:         "00000000000000000000000000000002",
 		Size:        5,
 		Filename:    "b.txt",
@@ -102,8 +104,9 @@ func TestReapExpiredSessions_ConfirmedSessionNotDeletedRaceFix(t *testing.T) {
 		ID:          4,
 		OwnerType:   1,
 		OwnerID:     100,
+		ObjectKey:   "uploads/04/00000000000000000000000000000004",
 		Bucket:      "uploads",
-		ObjectKey:   "uploads/race",
+		KeyPrefix:   "uploads/",
 		MD5:         "00000000000000000000000000000004",
 		Size:        4,
 		Filename:    "d.txt",
@@ -114,9 +117,9 @@ func TestReapExpiredSessions_ConfirmedSessionNotDeletedRaceFix(t *testing.T) {
 	}
 	err := dal.CreateUploadSession(ctx, db, sess)
 	require.NoError(t, err)
-	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/race",
+	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/04/00000000000000000000000000000004",
 		[]byte("data"), "text/plain", "00000000000000000000000000000004")
-	require.True(t, fp.ObjectExists("uploads", "uploads/race"), "precondition: object must exist")
+	require.True(t, fp.ObjectExists("uploads", "uploads/04/00000000000000000000000000000004"), "precondition: object must exist")
 
 	// Simulate confirmUpload winning the race by transitioning to CONFIRMED
 	// BEFORE ReapExpiredSessions reaches its CAS.
@@ -127,7 +130,7 @@ func TestReapExpiredSessions_ConfirmedSessionNotDeletedRaceFix(t *testing.T) {
 	assert.Equal(t, 0, deleted, "confirmed session must not have its OSS object deleted")
 
 	// The OSS object MUST survive — confirmUpload's file/object rows depend on it.
-	assert.True(t, fp.ObjectExists("uploads", "uploads/race"),
+	assert.True(t, fp.ObjectExists("uploads", "uploads/04/00000000000000000000000000000004"),
 		"OSS object must survive GC when session is no longer PENDING")
 
 	// And the session must still be CONFIRMED (not overwritten to EXPIRED).
@@ -149,8 +152,9 @@ func TestReapExpiredSessions_TransientErrorRetries(t *testing.T) {
 		ID:          3,
 		OwnerType:   1,
 		OwnerID:     100,
+		ObjectKey:   "uploads/tmp/1-100/x/00000000000000000000000000000003",
 		Bucket:      "uploads",
-		ObjectKey:   "uploads/flaky",
+		KeyPrefix:   "uploads/",
 		MD5:         "00000000000000000000000000000003",
 		Size:        5,
 		Filename:    "c.txt",
@@ -164,7 +168,7 @@ func TestReapExpiredSessions_TransientErrorRetries(t *testing.T) {
 
 	// Make HeadObject return a transient error (not ErrObjectNotFound) for
 	// this key — simulating a network blip / OSS 5xx / timeout.
-	fp.SetHeadObjectError("uploads", "uploads/flaky", errors.New("simulated OSS timeout"))
+	fp.SetHeadObjectError("uploads", "uploads/tmp/1-100/x/00000000000000000000000000000003", errors.New("simulated OSS timeout"))
 
 	deleted, err := svc.ReapExpiredSessions(ctx)
 	require.NoError(t, err)
@@ -178,7 +182,7 @@ func TestReapExpiredSessions_TransientErrorRetries(t *testing.T) {
 
 	// And a second GC run, now that OSS is reachable again with the object
 	// genuinely absent, must complete and expire the session.
-	fp.SetHeadObjectError("uploads", "uploads/flaky", nil)
+	fp.SetHeadObjectError("uploads", "uploads/tmp/1-100/x/00000000000000000000000000000003", nil)
 
 	deleted2, err := svc.ReapExpiredSessions(ctx)
 	require.NoError(t, err)
@@ -208,8 +212,9 @@ func TestReapExpiredSessions_HAReplicasDoNotDoubleProcess(t *testing.T) {
 		ID:          5,
 		OwnerType:   1,
 		OwnerID:     100,
+		ObjectKey:   "uploads/tmp/1-100/x/00000000000000000000000000000005",
 		Bucket:      "uploads",
-		ObjectKey:   "uploads/ha-contention",
+		KeyPrefix:   "uploads/",
 		MD5:         "00000000000000000000000000000005",
 		Size:        6,
 		Filename:    "e.txt",
@@ -220,9 +225,9 @@ func TestReapExpiredSessions_HAReplicasDoNotDoubleProcess(t *testing.T) {
 	}
 	err := dal.CreateUploadSession(ctx, db, sess)
 	require.NoError(t, err)
-	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/ha-contention",
+	fp.PutObjectWithMD5(context.Background(), "uploads", "uploads/tmp/1-100/x/00000000000000000000000000000005",
 		[]byte("data"), "text/plain", "00000000000000000000000000000005")
-	require.True(t, fp.ObjectExists("uploads", "uploads/ha-contention"),
+	require.True(t, fp.ObjectExists("uploads", "uploads/tmp/1-100/x/00000000000000000000000000000005"),
 		"precondition: object must exist")
 
 	var deleted1, deleted2 int
@@ -249,7 +254,7 @@ func TestReapExpiredSessions_HAReplicasDoNotDoubleProcess(t *testing.T) {
 		"exactly one replica should delete the orphan; got d1=%d d2=%d", deleted1, deleted2)
 
 	// And the OSS object is gone (deleted exactly once).
-	assert.False(t, fp.ObjectExists("uploads", "uploads/ha-contention"),
+	assert.False(t, fp.ObjectExists("uploads", "uploads/tmp/1-100/x/00000000000000000000000000000005"),
 		"orphan should be deleted after contention")
 
 	// Session must be EXPIRED regardless of which replica won.

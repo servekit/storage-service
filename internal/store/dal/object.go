@@ -14,11 +14,15 @@ import (
 
 // FindObjectByVendorBucketMD5 finds an active storage object by (vendor, bucket, md5).
 // Returns (object, true, nil) if found, (nil, false, nil) if not found.
-func FindObjectByVendorBucketMD5(ctx context.Context, tx *gorm.DB, vendor int32, bucket, md5 string) (*models.StorageObject, bool, error) {
+// FindObjectByVendorBucketObjectKey looks up the content-addressed dedup
+// hit for one app namespace: the object_key embeds the app key_prefix, so
+// identical content under different prefixes is stored (and deduplicated)
+// independently.
+func FindObjectByVendorBucketObjectKey(ctx context.Context, tx *gorm.DB, vendor int32, bucket, objectKey string) (*models.StorageObject, bool, error) {
 	obj, err := gorm.G[models.StorageObject](tx).
 		Where(generated.StorageObject.Vendor.Eq(vendor)).
 		Where(generated.StorageObject.Bucket.Eq(bucket)).
-		Where(generated.StorageObject.MD5.Eq(md5)).
+		Where(generated.StorageObject.ObjectKey.Eq(objectKey)).
 		Take(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -69,7 +73,7 @@ func BatchGetObjectsByIDs(ctx context.Context, tx *gorm.DB, ids []int64) (map[in
 	return result, nil
 }
 
-// CreateOrGetObject returns the existing object for (vendor, bucket, md5) or
+// CreateOrGetObject returns the existing object for (vendor, bucket, object_key) or
 // inserts a new one. Dedup of concurrent inserts for the same key is serialized
 // by a Redis lock in the service layer (see upload.confirmUpload); the DB
 // enforces no uniqueness on these columns, keeping the schema portable across
@@ -78,7 +82,7 @@ func BatchGetObjectsByIDs(ctx context.Context, tx *gorm.DB, ids []int64) (map[in
 // may create duplicate object rows — accepted for DB portability.
 // Returns (object, inserted, error) where inserted indicates a new row was created.
 func CreateOrGetObject(ctx context.Context, tx *gorm.DB, obj *models.StorageObject) (*models.StorageObject, bool, error) {
-	existing, found, err := FindObjectByVendorBucketMD5(ctx, tx, obj.Vendor, obj.Bucket, obj.MD5)
+	existing, found, err := FindObjectByVendorBucketObjectKey(ctx, tx, obj.Vendor, obj.Bucket, obj.ObjectKey)
 	if err != nil {
 		return nil, false, xcodes.ErrInternal.Wrapf(err, "find existing object")
 	}

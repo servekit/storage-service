@@ -305,6 +305,7 @@ func policyFingerprint(p *storage.STSPolicy) uint64 {
 		fmt.Sprintf("ext=%v", p.AllowedExtensions),
 		fmt.Sprintf("act=%v", p.AllowedActions),
 		fmt.Sprintf("ttl=%s", p.TTL.String()),
+		fmt.Sprintf("pfx=%s", p.KeyPrefix),
 		fmt.Sprintf("https=%t,acl=%t,deny=%t", p.EnforceHTTPS, p.LockObjectACL, p.DenyPutObjectACL),
 	} {
 		_, _ = h.Write([]byte(s))

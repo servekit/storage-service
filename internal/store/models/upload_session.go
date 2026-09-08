@@ -18,11 +18,17 @@ import (
 // Tradeoff: if Redis is unavailable, two racing callers may both insert a
 // PENDING session (duplicates expire via TTL) — accepted for portability.
 type StorageUploadSession struct {
-	ID          int64   `gorm:"primaryKey;column:id" json:"id"`
-	OwnerType   int32   `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_upload_sessions_owner;index:idx_upload_sessions_pending_dedup,priority:1" json:"owner_type"`
-	OwnerID     int64   `gorm:"column:owner_id;not null;index:idx_upload_sessions_owner;index:idx_upload_sessions_pending_dedup,priority:2" json:"owner_id"`
-	Bucket      string  `gorm:"column:bucket;type:varchar(128);not null" json:"bucket"`
-	ObjectKey   string  `gorm:"column:object_key;type:varchar(512);not null" json:"object_key"`
+	ID        int64  `gorm:"primaryKey;column:id" json:"id"`
+	OwnerType int32  `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_upload_sessions_owner;index:idx_upload_sessions_pending_dedup,priority:1" json:"owner_type"`
+	OwnerID   int64  `gorm:"column:owner_id;not null;index:idx_upload_sessions_owner;index:idx_upload_sessions_pending_dedup,priority:2" json:"owner_id"`
+	Bucket    string `gorm:"column:bucket;type:varchar(128);not null" json:"bucket"`
+	ObjectKey string `gorm:"column:object_key;type:varchar(512);not null" json:"object_key"`
+	// AppKey identifies the calling app that issued the session; KeyPrefix is
+	// that app's namespace snapshot at issue time. ConfirmUpload derives the
+	// final content-addressed key from KeyPrefix, keeping confirm
+	// self-contained even if the app is deleted or re-bound mid-flight.
+	AppKey      string  `gorm:"column:app_key;type:varchar(64);not null;default:''" json:"app_key"`
+	KeyPrefix   string  `gorm:"column:key_prefix;type:varchar(64);not null;default:''" json:"key_prefix"`
 	MD5         string  `gorm:"column:md5;type:varchar(32);not null;index:idx_upload_sessions_pending_dedup,priority:3" json:"md5"`
 	Size        int64   `gorm:"column:size;not null;index:idx_upload_sessions_pending_dedup,priority:4" json:"size"`
 	ContentType string  `gorm:"column:content_type;type:varchar(128);not null" json:"content_type"`

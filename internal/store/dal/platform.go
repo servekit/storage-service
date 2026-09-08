@@ -112,6 +112,20 @@ func CreateBucket(ctx context.Context, tx *gorm.DB, b *models.StorageBucket) err
 }
 
 // GetBucket returns the bucket by name, or ErrBucketNotFound.
+// GetBucketByID returns the bucket by row id, or ErrBucketNotFound.
+func GetBucketByID(ctx context.Context, tx *gorm.DB, id int64) (*models.StorageBucket, error) {
+	b, err := gorm.G[models.StorageBucket](tx).
+		Where(generated.StorageBucket.ID.Eq(id)).
+		Take(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, xcodes.ErrBucketNotFound.New()
+		}
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	return &b, nil
+}
+
 func GetBucket(ctx context.Context, tx *gorm.DB, name string) (*models.StorageBucket, error) {
 	b, err := gorm.G[models.StorageBucket](tx).
 		Where(generated.StorageBucket.Name.Eq(name)).
@@ -141,13 +155,12 @@ func ListBuckets(ctx context.Context, tx *gorm.DB) ([]*models.StorageBucket, err
 }
 
 // UpdateBucket replaces the mutable bucket fields (provider binding,
-// key_prefix, acl, cdn).
+// acl, cdn).
 func UpdateBucket(ctx context.Context, tx *gorm.DB, b *models.StorageBucket) error {
 	_, err := gorm.G[models.StorageBucket](tx).
 		Where(generated.StorageBucket.ID.Eq(b.ID)).
 		Set(
 			generated.StorageBucket.ProviderID.Set(b.ProviderID),
-			generated.StorageBucket.KeyPrefix.Set(b.KeyPrefix),
 			generated.StorageBucket.ACL.Set(b.ACL),
 			generated.StorageBucket.CDNDomain.Set(b.CDNDomain),
 			generated.StorageBucket.CDNAuthKey.Set(b.CDNAuthKey),
@@ -235,6 +248,124 @@ func CountBucketsForProvider(ctx context.Context, tx *gorm.DB, providerID int64)
 		Model(&models.StorageBucket{}).
 		Where("provider_id = ?", providerID).
 		Count(&n).Error
+	if err != nil {
+		return 0, xcodes.ErrInternal.Wrap(err)
+	}
+	return n, nil
+}
+
+// --- Apps ---
+
+// CreateApp inserts an app row.
+func CreateApp(ctx context.Context, tx *gorm.DB, a *models.StorageApp) error {
+	if err := gorm.G[models.StorageApp](tx).Create(ctx, a); err != nil {
+		return xcodes.ErrInternal.Wrap(err)
+	}
+	return nil
+}
+
+// GetApp returns the app by id, or ErrAppNotFound.
+func GetApp(ctx context.Context, tx *gorm.DB, id int64) (*models.StorageApp, error) {
+	a, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.ID.Eq(id)).
+		Take(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, xcodes.ErrAppNotFound.New()
+		}
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	return &a, nil
+}
+
+// GetAppByKey returns the live app by app_key, or ErrAppNotFound.
+func GetAppByKey(ctx context.Context, tx *gorm.DB, appKey string) (*models.StorageApp, error) {
+	a, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.AppKey.Eq(appKey)).
+		Take(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, xcodes.ErrAppNotFound.New()
+		}
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	return &a, nil
+}
+
+// ListApps returns all live apps ordered by app_key.
+func ListApps(ctx context.Context, tx *gorm.DB) ([]*models.StorageApp, error) {
+	results, err := gorm.G[models.StorageApp](tx).
+		Order(generated.StorageApp.AppKey.Asc()).
+		Find(ctx)
+	if err != nil {
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	out := make([]*models.StorageApp, len(results))
+	for i := range results {
+		out[i] = &results[i]
+	}
+	return out, nil
+}
+
+// UpdateApp applies mutable fields (name / disabled / bucket binding);
+// app_key and key_prefix are immutable by design.
+func UpdateApp(ctx context.Context, tx *gorm.DB, a *models.StorageApp) error {
+	_, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.ID.Eq(a.ID)).
+		Set(
+			generated.StorageApp.Name.Set(a.Name),
+			generated.StorageApp.Disabled.Set(a.Disabled),
+			generated.StorageApp.BucketID.Set(a.BucketID),
+		).
+		Update(ctx)
+	if err != nil {
+		return xcodes.ErrInternal.Wrap(err)
+	}
+	return nil
+}
+
+// UpdateAppSecret replaces the app secret (rotation).
+func UpdateAppSecret(ctx context.Context, tx *gorm.DB, id int64, secret string) error {
+	_, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.ID.Eq(id)).
+		Set(generated.StorageApp.AppSecret.Set(secret)).
+		Update(ctx)
+	if err != nil {
+		return xcodes.ErrInternal.Wrap(err)
+	}
+	return nil
+}
+
+// DeleteApp soft-deletes the app. Data-plane calls fail immediately via the
+// registry snapshot; existing objects/files stay readable.
+func DeleteApp(ctx context.Context, tx *gorm.DB, id int64) error {
+	_, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.ID.Eq(id)).
+		Delete(ctx)
+	if err != nil {
+		return xcodes.ErrInternal.Wrap(err)
+	}
+	return nil
+}
+
+// CountAppsByBucketID guards bucket deletion: a bucket referenced by an
+// app's binding cannot be removed.
+func CountAppsByBucketID(ctx context.Context, tx *gorm.DB, bucketID int64) (int64, error) {
+	n, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.BucketID.Eq(bucketID)).
+		Count(ctx, "*")
+	if err != nil {
+		return 0, xcodes.ErrInternal.Wrap(err)
+	}
+	return n, nil
+}
+
+// CountAppsByKeyPrefix guards prefix uniqueness over live rows (soft-deleted
+// rows may reuse the prefix — re-creating a deleted app reactivates it).
+func CountAppsByKeyPrefix(ctx context.Context, tx *gorm.DB, keyPrefix string) (int64, error) {
+	n, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.KeyPrefix.Eq(keyPrefix)).
+		Count(ctx, "*")
 	if err != nil {
 		return 0, xcodes.ErrInternal.Wrap(err)
 	}
