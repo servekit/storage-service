@@ -34,15 +34,19 @@ type Deps struct {
 // proto enums via Go type conversion (no switch needed).
 type Event struct {
 	Action     storagev1.AuditAction        // Operation type
-	OwnerType  int32                        // Who performed the operation (proto OwnerType int32 value)
-	OwnerID    int64                        // Who performed the operation
+	OwnerType  int32                        // Owner of the operated resource (proto OwnerType int32 value)
+	OwnerID    int64                        // Owner of the operated resource
 	TargetType storagev1.AuditLogTargetType // What was operated on
 	TargetID   int64                        // ID of the target
-	Before     map[string]any               // State before the operation (nil for creates)
-	After      map[string]any               // State after the operation (nil for deletes)
-	Status     storagev1.AuditLogStatus     // success or failed
-	Error      error                        // Failure reason (nil for success)
-	RequestID  string                       // Caller-provided request ID for traceability (empty if caller didn't set one)
+	// OperatorUserID is the verified acting user, filled automatically from
+	// the request actor (ctx) by the recorder — 0 for actor-less system /
+	// internal calls. Callers do not set it.
+	OperatorUserID int64                    `json:"-"`
+	Before         map[string]any           // State before the operation (nil for creates)
+	After          map[string]any           // State after the operation (nil for deletes)
+	Status         storagev1.AuditLogStatus // success or failed
+	Error          error                    // Failure reason (nil for success)
+	RequestID      string                   // Caller-provided request ID for traceability (empty if caller didn't set one)
 }
 
 // FileSnapshot captures file state for audit before/after. Fields use omitempty
@@ -113,16 +117,17 @@ func (s *Service) Recorder() Recorder {
 // switch needed.
 func buildAuditLogEntry(log *models.StorageAuditLog) *storagev1.AuditLogEntry {
 	entry := &storagev1.AuditLogEntry{
-		Id:           log.ID,
-		Action:       storagev1.AuditAction(log.Action),
-		OwnerType:    conv.OwnerTypeToProto(log.OwnerType),
-		OwnerId:      log.OwnerID,
-		TargetType:   storagev1.AuditLogTargetType(log.TargetType),
-		TargetId:     log.TargetID,
-		Status:       storagev1.AuditLogStatus(log.Status),
-		ErrorMessage: log.ErrorMessage,
-		RequestId:    log.RequestID,
-		CreatedAt:    log.CreatedAt.Format(time.RFC3339),
+		Id:             log.ID,
+		Action:         storagev1.AuditAction(log.Action),
+		OwnerType:      conv.OwnerTypeToProto(log.OwnerType),
+		OwnerId:        log.OwnerID,
+		TargetType:     storagev1.AuditLogTargetType(log.TargetType),
+		TargetId:       log.TargetID,
+		Status:         storagev1.AuditLogStatus(log.Status),
+		ErrorMessage:   log.ErrorMessage,
+		RequestId:      log.RequestID,
+		OperatorUserId: log.OperatorUserID,
+		CreatedAt:      log.CreatedAt.Format(time.RFC3339),
 	}
 
 	if log.Before != nil {
@@ -143,16 +148,17 @@ func buildAuditLog(id int64, event Event) *models.StorageAuditLog {
 		errMsg = event.Error.Error()
 	}
 	return &models.StorageAuditLog{
-		ID:           id,
-		Action:       int32(event.Action),
-		OwnerType:    event.OwnerType,
-		OwnerID:      event.OwnerID,
-		TargetType:   int32(event.TargetType),
-		TargetID:     event.TargetID,
-		Before:       models.JSONMap(event.Before),
-		After:        models.JSONMap(event.After),
-		Status:       int32(event.Status),
-		ErrorMessage: errMsg,
-		RequestID:    event.RequestID,
+		ID:             id,
+		Action:         int32(event.Action),
+		OwnerType:      event.OwnerType,
+		OwnerID:        event.OwnerID,
+		TargetType:     int32(event.TargetType),
+		TargetID:       event.TargetID,
+		OperatorUserID: event.OperatorUserID,
+		Before:         models.JSONMap(event.Before),
+		After:          models.JSONMap(event.After),
+		Status:         int32(event.Status),
+		ErrorMessage:   errMsg,
+		RequestID:      event.RequestID,
 	}
 }

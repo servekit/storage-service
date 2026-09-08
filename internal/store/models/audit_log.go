@@ -10,18 +10,22 @@ import (
 
 // StorageAuditLog records a write operation on a storage resource.
 type StorageAuditLog struct {
-	ID           int64     `gorm:"primaryKey" json:"id"`
-	Action       int32     `gorm:"column:action;type:smallint;not null" json:"action"`
-	OwnerType    int32     `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_audit_logs_owner,sort:desc" json:"owner_type"`
-	OwnerID      int64     `gorm:"column:owner_id;not null;index:idx_audit_logs_owner,sort:desc" json:"owner_id"`
-	TargetType   int32     `gorm:"column:target_type;type:smallint;not null;index:idx_audit_logs_target,sort:desc" json:"target_type"`
-	TargetID     int64     `gorm:"column:target_id;not null;index:idx_audit_logs_target,sort:desc" json:"target_id"`
-	Before       JSONMap   `gorm:"column:before;type:json" json:"before,omitempty"`
-	After        JSONMap   `gorm:"column:after;type:json" json:"after,omitempty"`
-	Status       int32     `gorm:"column:status;type:smallint;not null" json:"status"`
-	ErrorMessage string    `gorm:"column:error_message;type:text" json:"error_message,omitempty"`
-	RequestID    string    `gorm:"column:request_id;type:varchar(64)" json:"request_id,omitempty"`
-	CreatedAt    time.Time `gorm:"column:created_at;not null;autoCreateTime;index:idx_audit_logs_created,sort:desc" json:"created_at"`
+	ID           int64   `gorm:"primaryKey" json:"id"`
+	Action       int32   `gorm:"column:action;type:smallint;not null" json:"action"`
+	OwnerType    int32   `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_audit_logs_owner,sort:desc" json:"owner_type"`
+	OwnerID      int64   `gorm:"column:owner_id;not null;index:idx_audit_logs_owner,sort:desc" json:"owner_id"`
+	TargetType   int32   `gorm:"column:target_type;type:smallint;not null;index:idx_audit_logs_target,sort:desc" json:"target_type"`
+	TargetID     int64   `gorm:"column:target_id;not null;index:idx_audit_logs_target,sort:desc" json:"target_id"`
+	Before       JSONMap `gorm:"column:before;type:json" json:"before,omitempty"`
+	After        JSONMap `gorm:"column:after;type:json" json:"after,omitempty"`
+	Status       int32   `gorm:"column:status;type:smallint;not null" json:"status"`
+	ErrorMessage string  `gorm:"column:error_message;type:text" json:"error_message,omitempty"`
+	RequestID    string  `gorm:"column:request_id;type:varchar(64)" json:"request_id,omitempty"`
+	// OperatorUserID is the verified acting user from the request actor; 0
+	// for actor-less system / internal calls. Distinct from OwnerID, which
+	// is the owner of the operated resource.
+	OperatorUserID int64     `gorm:"column:operator_user_id;not null;default:0" json:"operator_user_id,omitempty"`
+	CreatedAt      time.Time `gorm:"column:created_at;not null;autoCreateTime;index:idx_audit_logs_created,sort:desc" json:"created_at"`
 }
 
 // JSONMap is a custom type for JSONB map fields with any values.

@@ -6,6 +6,7 @@ import (
 
 	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
+	"github.com/servekit/go-common/grpcx"
 	"github.com/servekit/storage-service/internal/store/dal"
 
 	"gorm.io/gorm"
@@ -75,7 +76,7 @@ func (r *DBRecorder) Record(ctx context.Context, event Event) error {
 		slog.Error("audit: generate id", "error", err)
 		return err
 	}
-	if createErr := dal.CreateAuditLog(ctx, r.db, buildAuditLog(id, event)); createErr != nil {
+	if createErr := dal.CreateAuditLog(ctx, r.db, buildAuditLog(id, withOperator(ctx, event))); createErr != nil {
 		slog.Error("audit: write log", "error", createErr)
 		return createErr
 	}
@@ -98,11 +99,23 @@ func (r *DBRecorder) RecordInTx(ctx context.Context, tx *gorm.DB, event Event) e
 		slog.Error("audit: generate id (in tx)", "error", err)
 		return err
 	}
-	if createErr := dal.CreateAuditLog(ctx, tx, buildAuditLog(id, event)); createErr != nil {
+	if createErr := dal.CreateAuditLog(ctx, tx, buildAuditLog(id, withOperator(ctx, event))); createErr != nil {
 		slog.Error("audit: write log (in tx)", "error", createErr)
 		return createErr
 	}
 	return nil
+}
+
+// withOperator stamps the request actor's user id onto the event. The
+// recorder is the single injection point — call sites never carry the
+// operator, so admin operations are attributed automatically.
+func withOperator(ctx context.Context, event Event) Event {
+	if event.OperatorUserID == 0 {
+		if a, ok := grpcx.ActorFromCtx(ctx); ok {
+			event.OperatorUserID = a.GetUserId()
+		}
+	}
+	return event
 }
 
 // RecordOutcome records an audit event with Status derived from err:
