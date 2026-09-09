@@ -1,8 +1,9 @@
 // App admin RPCs: calling-application CRUD for the storage platform.
 // Mirrors message-service's app management — app_key/key_prefix are
-// immutable, the secret is minted server-side and shown exactly once
-// (create / rotate), deletion is soft and takes effect on the next registry
-// refresh (which runs immediately after each mutation below).
+// immutable, the secret is minted server-side and echoed on every read
+// (internal-trust posture; the ops console is the intended reader),
+// deletion is soft and takes effect on the next registry refresh (which
+// runs immediately after each mutation below).
 package admin
 
 import (
@@ -23,16 +24,20 @@ import (
 )
 
 // AdminCreateApp registers a calling application. app_key empty = minted
-// server-side. The secret is returned once and never listed.
+// server-side (collision-checked). The secret is echoed on every read of
+// StorageAppInfo.
 func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreateAppRequest) (*storagev1.AdminCreateAppResponse, error) {
 	if req.GetKeyPrefix() == "" {
 		return nil, xcodes.ErrBadRequest.New("key_prefix is required")
 	}
 	appKey := req.GetAppKey()
 	if appKey == "" {
-		appKey = mintAppKey()
-	}
-	if _, err := dal.GetAppByKey(ctx, s.db, appKey); err == nil {
+		var err error
+		appKey, err = s.mintUniqueAppKey(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else if _, err := dal.GetAppByKey(ctx, s.db, appKey); err == nil {
 		return nil, xcodes.ErrAppExists.New(fmt.Sprintf("app_key %q already exists", appKey))
 	} else if !errors.Is(err, xcodes.ErrAppNotFound.New()) {
 		return nil, err
@@ -91,7 +96,7 @@ func (s *Service) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdate
 		return nil, err
 	}
 	before := appSnapshot(app)
-	if req.Name != nil && *req.Name != "" {
+	if req.Name != nil {
 		app.Name = *req.Name
 	}
 	if req.Disabled != nil {
@@ -128,6 +133,9 @@ func (s *Service) AdminRotateAppSecret(ctx context.Context, req *storagev1.Admin
 	if err := dal.UpdateAppSecret(ctx, s.db, app.ID, secret); err != nil {
 		return nil, err
 	}
+	app.AppSecret = secret
+	s.auditPlatform(ctx, storagev1.AuditAction_AUDIT_ACTION_ADMIN_ROTATE_APP_SECRET,
+		storagev1.AuditLogTargetType_AUDIT_LOG_TARGET_TYPE_APP, app.ID, nil, appSnapshot(app))
 	s.refreshPlatform(ctx)
 	return &storagev1.AdminRotateAppSecretResponse{App: appToProto(app), AppSecret: secret}, nil
 }
@@ -174,6 +182,7 @@ func appToProto(a *models.StorageApp) *storagev1.StorageAppInfo {
 		Disabled:  a.Disabled,
 		CreatedAt: a.CreatedAt.Unix(),
 		UpdatedAt: a.UpdatedAt.Unix(),
+		AppSecret: a.AppSecret,
 	}
 }
 
@@ -182,6 +191,22 @@ func appSnapshot(a *models.StorageApp) map[string]any {
 		"app_key": a.AppKey, "name": a.Name, "key_prefix": a.KeyPrefix,
 		"bucket_id": a.BucketID, "disabled": a.Disabled,
 	}
+}
+
+// mintUniqueAppKey mints app_keys with collision retry (message-service
+// shape): up to 3 attempts against the live registry.
+func (s *Service) mintUniqueAppKey(ctx context.Context) (string, error) {
+	for range 3 {
+		candidate := mintAppKey()
+		_, err := dal.GetAppByKey(ctx, s.db, candidate)
+		if errors.Is(err, xcodes.ErrAppNotFound.New()) {
+			return candidate, nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", xcodes.ErrInternal.New("mint app key: too many collisions")
 }
 
 // mintAppKey mints "sto_" + 8 base36 chars (same shape as message-service).

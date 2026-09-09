@@ -65,7 +65,7 @@ type StorageApp struct {
 	ID        int64  `gorm:"primaryKey"`
 	AppKey    string `gorm:"column:app_key;size:64;uniqueIndex;not null"`
 	AppSecret string `gorm:"column:app_secret;size:128;not null"`
-	Name      string `gorm:"size:128;not null"`
+	Name      string `gorm:"size:200;not null"`
 	// KeyPrefix namespaces every object the app writes; immutable, ends '/'.
 	KeyPrefix string `gorm:"column:key_prefix;size:64;uniqueIndex;not null"`
 	// BucketID selects the app's private bucket; 0 = the default bucket.

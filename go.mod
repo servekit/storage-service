@@ -2,7 +2,6 @@ module github.com/servekit/storage-service
 
 go 1.26.6
 
-
 require (
 	buf.build/go/protovalidate v1.2.0
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.1
