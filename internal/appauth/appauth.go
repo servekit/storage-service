@@ -20,12 +20,13 @@ const (
 	KeyAppSecret = "x-app-secret"
 )
 
-// WithApp returns a context carrying the app credentials as incoming
-// metadata. Module-mode callers wrap their context before invoking the
-// storage Service; gRPC-mode clients get the same effect for free when the
-// credentials travel as metadata (or call this on the outgoing side).
+// WithApp returns a context carrying the app credentials as BOTH incoming
+// and outgoing metadata: incoming covers module-mode (in-process) calls
+// where the context flows straight into the service impl; outgoing lets a
+// real gRPC client forward them to a remote server.
 func WithApp(ctx context.Context, appKey, appSecret string) context.Context {
-	return metadata.NewIncomingContext(ctx, metadata.Pairs(KeyAppKey, appKey, KeyAppSecret, appSecret))
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(KeyAppKey, appKey, KeyAppSecret, appSecret))
+	return metadata.AppendToOutgoingContext(ctx, KeyAppKey, appKey, KeyAppSecret, appSecret)
 }
 
 // Credentials returns the (app_key, app_secret) pair from incoming
