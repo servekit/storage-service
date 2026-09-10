@@ -83,11 +83,11 @@ func TestAdminScope_NoIdentityFailsClosed(t *testing.T) {
 	svc := newScopeFixture(t)
 	ctx := anonCtx()
 
-	_, err := svc.AdminListApps(ctx, nil)
+	_, err := svc.AdminListTenantConfigs(ctx, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, xcodes.ErrUnauthorized.New())
 
-	_, err = svc.AdminCreateApp(ctx, adminCreateAppReq("x", "x/", ""))
+	_, err = svc.AdminEnsureTenantConfig(ctx, ensureReq("x", "x/", ""))
 	require.ErrorIs(t, err, xcodes.ErrUnauthorized.New())
 
 	_, err = svc.AdminListFiles(ctx, &storagev1.AdminListFilesRequest{})
@@ -108,37 +108,37 @@ func TestAdminScope_AppPlatformBranch(t *testing.T) {
 	seedScopedApps(t, svc)
 	ctx := tenantCtx(scopeAlpha)
 
-	list, err := svc.AdminListApps(ctx, nil)
+	list, err := svc.AdminListTenantConfigs(ctx, nil)
 	require.NoError(t, err)
-	require.Len(t, list.GetApps(), 1)
-	assert.Equal(t, "alpha-app", list.GetApps()[0].GetAppKey())
+	require.Len(t, list.GetConfigs(), 1)
+	assert.Equal(t, "alpha-app", list.GetConfigs()[0].GetAppKey())
 
-	_, err = svc.AdminGetApp(ctx, &storagev1.AdminGetAppRequest{AppKey: "beta-app"})
+	_, err = svc.AdminGetTenantConfig(ctx, &storagev1.AdminGetTenantConfigRequest{TenantKey: scopeBeta})
 	require.ErrorIs(t, err, xcodes.ErrAppNotFound.New())
 
-	_, err = svc.AdminUpdateApp(ctx, &storagev1.AdminUpdateAppRequest{AppKey: "beta-app"})
+	_, err = svc.AdminUpdateTenantConfig(ctx, &storagev1.AdminUpdateTenantConfigRequest{TenantKey: scopeBeta})
 	require.ErrorIs(t, err, xcodes.ErrAppNotFound.New())
 
-	_, err = svc.AdminRotateAppSecret(ctx, &storagev1.AdminRotateAppSecretRequest{AppKey: "beta-app"})
+	_, err = svc.AdminRotateTenantConfigSecret(ctx, &storagev1.AdminRotateTenantConfigSecretRequest{TenantKey: scopeBeta})
 	require.ErrorIs(t, err, xcodes.ErrAppNotFound.New())
 
-	_, err = svc.AdminDeleteApp(ctx, &storagev1.AdminDeleteAppRequest{AppKey: "beta-app"})
+	_, err = svc.AdminDeleteTenantConfig(ctx, &storagev1.AdminDeleteTenantConfigRequest{TenantKey: scopeBeta})
 	require.ErrorIs(t, err, xcodes.ErrAppNotFound.New())
 
-	_, err = svc.AdminGetApp(ctx, &storagev1.AdminGetAppRequest{AppKey: "alpha-app"})
+	_, err = svc.AdminGetTenantConfig(ctx, &storagev1.AdminGetTenantConfigRequest{TenantKey: scopeAlpha})
 	require.NoError(t, err)
 
-	// create clamps: body forges beta, injection wins (and the literal
-	// fallback is overridden too); a fresh tenant keeps its one-row budget
-	created, err := svc.AdminCreateApp(tenantCtx("ten_gamma0000000"), adminCreateAppReq("forged", "forged/", scopeAlpha))
+	// ensure clamps: body forges beta's tenant, injection wins; a fresh
+	// tenant gets its one-row budget
+	created, err := svc.AdminEnsureTenantConfig(tenantCtx("ten_gamma0000000"), ensureReq("forged", "forged/", scopeAlpha))
 	require.NoError(t, err)
-	assert.Equal(t, "ten_gamma0000000", created.GetApp().GetTenantKey())
+	assert.Equal(t, "ten_gamma0000000", created.GetConfig().GetTenantKey())
 
 	// cross-view full access
-	all, err := svc.AdminListApps(platformCtx(), nil)
+	all, err := svc.AdminListTenantConfigs(platformCtx(), nil)
 	require.NoError(t, err)
-	assert.Len(t, all.GetApps(), 3)
-	_, err = svc.AdminRotateAppSecret(platformCtx(), &storagev1.AdminRotateAppSecretRequest{AppKey: "beta-app"})
+	assert.Len(t, all.GetConfigs(), 3)
+	_, err = svc.AdminRotateTenantConfigSecret(platformCtx(), &storagev1.AdminRotateTenantConfigSecretRequest{TenantKey: scopeBeta})
 	require.NoError(t, err)
 }
 

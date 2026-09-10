@@ -28,11 +28,14 @@ func (g *seqGID) NextID(_ context.Context, _ *gidv1.NextIDRequest) (*gidv1.NextI
 	return &gidv1.NextIDResponse{Id: atomic.AddInt64(&g.counter, 1)}, nil
 }
 
-// TestAdminCreateApp_TenantKey: the admin surface accepts and echoes the
-// phase ③ tenant mapping; an omitted tenant_key defaults to the app_key
-// literal (same mapping the migration backfill writes); a duplicate
-// tenant_key is rejected before hitting the DB unique index.
-func TestAdminCreateApp_TenantKey(t *testing.T) {
+// TestAdminEnsureTenantConfig_TenantKey (phase ④ T6 rename of
+// TestAdminCreateApp_TenantKey): the surface accepts and echoes the tenant
+// mapping; an omitted tenant_key on the cross-view defaults to the
+// server-minted app key literal (same mapping the migration backfill
+// writes); re-ensuring an already-mapped tenant is IDEMPOTENT — the live
+// row (and its secret) is returned as-is instead of a duplicate-mapping
+// error, the semantics the new name promises.
+func TestAdminEnsureTenantConfig_TenantKey(t *testing.T) {
 	db := dbx.SetupTestDB(t, dbx.DriverPostgres)
 	require.NoError(t, db.AutoMigrate(models.AllModels()...))
 	reg, err := storage.NewRegistry(nil)
@@ -41,37 +44,44 @@ func TestAdminCreateApp_TenantKey(t *testing.T) {
 	svc := New(&Deps{DB: db, GID: gid, Registry: reg, Audit: audit.New(&audit.Deps{DB: db, GID: gid}).Recorder()})
 	ctx := platformCtx() // phase ④ T5: the admin surface requires a trusted identity
 
-	resp, err := svc.AdminCreateApp(ctx, adminCreateAppReq("mapped", "mapped/", "ten_acme00000001"))
+	resp, err := svc.AdminEnsureTenantConfig(ctx, ensureReq("mapped", "mapped/", "ten_acme00000001"))
 	require.NoError(t, err)
-	assert.Equal(t, "ten_acme00000001", resp.GetApp().GetTenantKey())
+	assert.Equal(t, "ten_acme00000001", resp.GetConfig().GetTenantKey())
 
-	row, err := dal.GetAppByKey(ctx, db, "mapped")
+	row, err := dal.GetAppForTenant(ctx, db, "ten_acme00000001")
 	require.NoError(t, err)
+	require.NotNil(t, row)
 	assert.Equal(t, "ten_acme00000001", models.TenantKeyOf(row.TenantKey))
+	assert.NotEmpty(t, row.AppKey, "the app identity is server-minted now")
 
-	// Omitted tenant_key defaults to the app_key literal (window mapping).
-	resp, err = svc.AdminCreateApp(ctx, adminCreateAppReq("literal", "literal/", ""))
+	// Idempotent: re-ensuring the mapped tenant returns the SAME row.
+	again, err := svc.AdminEnsureTenantConfig(ctx, ensureReq("other-name", "other/", "ten_acme00000001"))
 	require.NoError(t, err)
-	assert.Equal(t, "literal", resp.GetApp().GetTenantKey())
+	assert.Equal(t, row.ID, again.GetConfig().GetId(), "ensure of an existing tenant is a read-back, not a create")
+	assert.Equal(t, row.AppKey, again.GetConfig().GetAppKey())
 
-	// Duplicate tenant_key fails with a friendly error, not an internal one.
-	_, err = svc.AdminCreateApp(ctx, adminCreateAppReq("clash", "clash/", "ten_acme00000001"))
-	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "INTERNAL", "duplicate tenant_key must not surface as an internal error")
+	// Omitted tenant_key defaults to the minted app_key literal (window
+	// mapping) — read back through the row since the wire never names it.
+	resp, err = svc.AdminEnsureTenantConfig(ctx, ensureReq("literal", "literal/", ""))
+	require.NoError(t, err)
+	literal, err := dal.GetAppForTenant(ctx, db, resp.GetConfig().GetAppKey())
+	require.NoError(t, err)
+	require.NotNil(t, literal)
+	assert.Equal(t, literal.AppKey, models.TenantKeyOf(literal.TenantKey))
 
-	// AdminListApps echoes the mapping.
-	list, err := svc.AdminListApps(ctx, nil)
+	// AdminListTenantConfigs echoes the mapping.
+	list, err := svc.AdminListTenantConfigs(ctx, nil)
 	require.NoError(t, err)
 	byKey := map[string]string{}
-	for _, a := range list.GetApps() {
+	for _, a := range list.GetConfigs() {
 		byKey[a.GetAppKey()] = a.GetTenantKey()
 	}
-	assert.Equal(t, "ten_acme00000001", byKey["mapped"])
-	assert.Equal(t, "literal", byKey["literal"])
+	assert.Equal(t, "ten_acme00000001", byKey[row.AppKey])
+	assert.Equal(t, literal.AppKey, byKey[literal.AppKey])
 }
 
-func adminCreateAppReq(appKey, keyPrefix, tenantKey string) *storagev1.AdminCreateAppRequest {
-	return &storagev1.AdminCreateAppRequest{
-		AppKey: appKey, Name: appKey, KeyPrefix: keyPrefix, TenantKey: tenantKey,
+func ensureReq(name, keyPrefix, tenantKey string) *storagev1.AdminEnsureTenantConfigRequest {
+	return &storagev1.AdminEnsureTenantConfigRequest{
+		Name: name, KeyPrefix: keyPrefix, TenantKey: tenantKey,
 	}
 }

@@ -430,34 +430,34 @@ func (s *StorageService) AdminUpsertBucket(ctx context.Context, req *storagev1.A
 	return s.admin.AdminUpsertBucket(ctx, req)
 }
 
-// AdminCreateApp delegates to the admin subpackage.
-func (s *StorageService) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreateAppRequest) (*storagev1.AdminCreateAppResponse, error) {
-	return s.admin.AdminCreateApp(ctx, req)
+// AdminEnsureTenantConfig delegates to the admin subpackage.
+func (s *StorageService) AdminEnsureTenantConfig(ctx context.Context, req *storagev1.AdminEnsureTenantConfigRequest) (*storagev1.AdminEnsureTenantConfigResponse, error) {
+	return s.admin.AdminEnsureTenantConfig(ctx, req)
 }
 
-// AdminGetApp delegates to the admin subpackage.
-func (s *StorageService) AdminGetApp(ctx context.Context, req *storagev1.AdminGetAppRequest) (*storagev1.AdminGetAppResponse, error) {
-	return s.admin.AdminGetApp(ctx, req)
+// AdminGetTenantConfig delegates to the admin subpackage.
+func (s *StorageService) AdminGetTenantConfig(ctx context.Context, req *storagev1.AdminGetTenantConfigRequest) (*storagev1.AdminGetTenantConfigResponse, error) {
+	return s.admin.AdminGetTenantConfig(ctx, req)
 }
 
-// AdminUpdateApp delegates to the admin subpackage.
-func (s *StorageService) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdateAppRequest) (*storagev1.AdminUpdateAppResponse, error) {
-	return s.admin.AdminUpdateApp(ctx, req)
+// AdminUpdateTenantConfig delegates to the admin subpackage.
+func (s *StorageService) AdminUpdateTenantConfig(ctx context.Context, req *storagev1.AdminUpdateTenantConfigRequest) (*storagev1.AdminUpdateTenantConfigResponse, error) {
+	return s.admin.AdminUpdateTenantConfig(ctx, req)
 }
 
-// AdminRotateAppSecret delegates to the admin subpackage.
-func (s *StorageService) AdminRotateAppSecret(ctx context.Context, req *storagev1.AdminRotateAppSecretRequest) (*storagev1.AdminRotateAppSecretResponse, error) {
-	return s.admin.AdminRotateAppSecret(ctx, req)
+// AdminRotateTenantConfigSecret delegates to the admin subpackage.
+func (s *StorageService) AdminRotateTenantConfigSecret(ctx context.Context, req *storagev1.AdminRotateTenantConfigSecretRequest) (*storagev1.AdminRotateTenantConfigSecretResponse, error) {
+	return s.admin.AdminRotateTenantConfigSecret(ctx, req)
 }
 
-// AdminListApps delegates to the admin subpackage.
-func (s *StorageService) AdminListApps(ctx context.Context, req *storagev1.AdminListAppsRequest) (*storagev1.AdminListAppsResponse, error) {
-	return s.admin.AdminListApps(ctx, req)
+// AdminListTenantConfigs delegates to the admin subpackage.
+func (s *StorageService) AdminListTenantConfigs(ctx context.Context, req *storagev1.AdminListTenantConfigsRequest) (*storagev1.AdminListTenantConfigsResponse, error) {
+	return s.admin.AdminListTenantConfigs(ctx, req)
 }
 
-// AdminDeleteApp delegates to the admin subpackage.
-func (s *StorageService) AdminDeleteApp(ctx context.Context, req *storagev1.AdminDeleteAppRequest) (*emptypb.Empty, error) {
-	return s.admin.AdminDeleteApp(ctx, req)
+// AdminDeleteTenantConfig delegates to the admin subpackage.
+func (s *StorageService) AdminDeleteTenantConfig(ctx context.Context, req *storagev1.AdminDeleteTenantConfigRequest) (*emptypb.Empty, error) {
+	return s.admin.AdminDeleteTenantConfig(ctx, req)
 }
 
 // AdminDeleteBucket delegates to the admin subpackage (rejected while

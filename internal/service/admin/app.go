@@ -1,9 +1,10 @@
-// App admin RPCs: calling-application CRUD for the storage platform.
-// Mirrors message-service's app management — app_key/key_prefix are
-// immutable, the secret is minted server-side and echoed on every read
-// (internal-trust posture; the ops console is the intended reader),
-// deletion is soft and takes effect on the next registry refresh (which
-// runs immediately after each mutation below).
+// Tenant-config admin RPCs for the storage platform (phase ④ T6 rename of
+// the apps surface): one config row per tenant; the row keeps its internal
+// calling-application identity — app_key/key_prefix are immutable, the
+// secret is minted server-side and echoed on every read (internal-trust
+// posture; the ops console is the intended reader), deletion is soft and
+// takes effect on the next registry refresh (which runs immediately after
+// each mutation below).
 package admin
 
 import (
@@ -23,29 +24,40 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-// AdminCreateApp registers a calling application. app_key empty = minted
-// server-side (collision-checked). tenant_key empty = the app_key literal
-// (the phase ③ legacy→tenant mapping the migration backfill also writes);
-// unique across apps. A scoped caller is clamped to the injected key. The
-// secret is echoed on every read of StorageAppInfo.
-func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreateAppRequest) (*storagev1.AdminCreateAppResponse, error) {
+// AdminEnsureTenantConfig idempotently provisions the tenant's config row
+// (phase ④ T6 rename of AdminCreateApp — the name now tells the truth).
+// When the tenant already has a live row it is returned as-is
+// (key_prefix/bucket/name only apply to a fresh create — the tenant-key
+// lookup prefers the mapping and falls back to the app_key literal for
+// pre-backfill rows); otherwise a row is created with the app identity
+// minted server-side ("sto_" + 8 base36, collision-checked) and
+// tenant_key empty-on-the-cross-view defaulting to the minted literal
+// (the phase ③ legacy→tenant fallback). A scoped caller is clamped to the
+// injected key, so their ensure is the read-back of their own row. The
+// secret is echoed on every read of StorageTenantConfigInfo.
+func (s *Service) AdminEnsureTenantConfig(ctx context.Context, req *storagev1.AdminEnsureTenantConfigRequest) (*storagev1.AdminEnsureTenantConfigResponse, error) {
 	scope, err := scopeFromCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
+	// Resolve the effective tenant first: a scoped caller (or an explicit
+	// cross-view target) may already own a row — that IS the ensure answer.
+	targetTenant := req.GetTenantKey()
+	if scope != "" {
+		targetTenant = scope
+	}
+	if targetTenant != "" {
+		if existing, err := dal.GetAppForTenant(ctx, s.db, targetTenant); err != nil {
+			return nil, err
+		} else if existing != nil {
+			return &storagev1.AdminEnsureTenantConfigResponse{Config: appToProto(existing), AppSecret: existing.AppSecret}, nil
+		}
+	}
 	if req.GetKeyPrefix() == "" {
 		return nil, xcodes.ErrBadRequest.New("key_prefix is required")
 	}
-	appKey := req.GetAppKey()
-	if appKey == "" {
-		var err error
-		appKey, err = s.mintUniqueAppKey(ctx)
-		if err != nil {
-			return nil, err
-		}
-	} else if _, err := dal.GetAppByKey(ctx, s.db, appKey); err == nil {
-		return nil, xcodes.ErrAppExists.New(fmt.Sprintf("app_key %q already exists", appKey))
-	} else if !errors.Is(err, xcodes.ErrAppNotFound.New()) {
+	appKey, err := s.mintUniqueAppKey(ctx)
+	if err != nil {
 		return nil, err
 	}
 	if n, err := dal.CountAppsByKeyPrefix(ctx, s.db, req.GetKeyPrefix()); err != nil {
@@ -53,10 +65,9 @@ func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreate
 	} else if n > 0 {
 		return nil, xcodes.ErrPrefixTaken.New(fmt.Sprintf("key_prefix %q already in use", req.GetKeyPrefix()))
 	}
-	// Phase ③ tenant mapping: explicit tenant_key wins; empty defaults to the
-	// app_key literal (window fallback) — clamped to the injected key for
-	// scoped callers. Duplicate mappings are rejected here so the operator
-	// gets a friendly error rather than the DB unique index.
+	// Fresh row's tenant stamp: clamped to the injected key for scoped
+	// callers; explicit on the cross-view; the minted app_key literal as the
+	// window fallback (duplicate mappings still answer the friendly error).
 	tenantKey := clampTenantKey(scope, req.GetTenantKey(), appKey)
 	if n, err := dal.CountAppsByTenantKey(ctx, s.db, tenantKey); err != nil {
 		return nil, err
@@ -92,39 +103,28 @@ func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreate
 	s.auditPlatform(ctx, storagev1.AuditAction_AUDIT_ACTION_ADMIN_CREATE_APP,
 		storagev1.AuditLogTargetType_AUDIT_LOG_TARGET_TYPE_APP, app.ID, nil, appSnapshot(app))
 	s.refreshPlatform(ctx)
-	return &storagev1.AdminCreateAppResponse{App: appToProto(app), AppSecret: secret}, nil
+	return &storagev1.AdminEnsureTenantConfigResponse{Config: appToProto(app), AppSecret: secret}, nil
 }
 
-// AdminGetApp returns one app by app_key. A scoped caller sees only the
-// app mapped to their tenant (foreign apps answer not-found).
-func (s *Service) AdminGetApp(ctx context.Context, req *storagev1.AdminGetAppRequest) (*storagev1.AdminGetAppResponse, error) {
-	scope, err := scopeFromCtx(ctx)
+// AdminGetTenantConfig returns the tenant's config row (tenant_key
+// selector; legacy pre-backfill rows resolve through the app_key-literal
+// fallback). A scoped caller sees only their own row (foreign rows answer
+// not-found — anti-enumeration).
+func (s *Service) AdminGetTenantConfig(ctx context.Context, req *storagev1.AdminGetTenantConfigRequest) (*storagev1.AdminGetTenantConfigResponse, error) {
+	app, err := s.configForTenantScoped(ctx, req.GetTenantKey())
 	if err != nil {
 		return nil, err
 	}
-	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
-	if err != nil {
-		return nil, err
-	}
-	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
-		return nil, err
-	}
-	return &storagev1.AdminGetAppResponse{App: appToProto(app)}, nil
+	return &storagev1.AdminGetTenantConfigResponse{Config: appToProto(app)}, nil
 }
 
-// AdminUpdateApp edits mutable fields. app_key and key_prefix are immutable
-// (objects already live under the prefix); bucket rebinding only affects
-// new uploads. Ownership-checked against the caller's scope.
-func (s *Service) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdateAppRequest) (*storagev1.AdminUpdateAppResponse, error) {
-	scope, err := scopeFromCtx(ctx)
+// AdminUpdateTenantConfig edits mutable fields. The row's identity and
+// key_prefix are immutable (objects already live under the prefix); bucket
+// rebinding only affects new uploads. Ownership-checked against the
+// caller's scope.
+func (s *Service) AdminUpdateTenantConfig(ctx context.Context, req *storagev1.AdminUpdateTenantConfigRequest) (*storagev1.AdminUpdateTenantConfigResponse, error) {
+	app, err := s.configForTenantScoped(ctx, req.GetTenantKey())
 	if err != nil {
-		return nil, err
-	}
-	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
-	if err != nil {
-		return nil, err
-	}
-	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
 		return nil, err
 	}
 	before := appSnapshot(app)
@@ -148,22 +148,15 @@ func (s *Service) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdate
 	s.auditPlatform(ctx, storagev1.AuditAction_AUDIT_ACTION_ADMIN_UPDATE_APP,
 		storagev1.AuditLogTargetType_AUDIT_LOG_TARGET_TYPE_APP, app.ID, before, appSnapshot(app))
 	s.refreshPlatform(ctx)
-	return &storagev1.AdminUpdateAppResponse{App: appToProto(app)}, nil
+	return &storagev1.AdminUpdateTenantConfigResponse{Config: appToProto(app)}, nil
 }
 
-// AdminRotateAppSecret mints a new secret; the old one stops working on
-// the next registry refresh (immediate here). Ownership-checked against
-// the caller's scope.
-func (s *Service) AdminRotateAppSecret(ctx context.Context, req *storagev1.AdminRotateAppSecretRequest) (*storagev1.AdminRotateAppSecretResponse, error) {
-	scope, err := scopeFromCtx(ctx)
+// AdminRotateTenantConfigSecret mints a new secret; the old one stops
+// working on the next registry refresh (immediate here). Ownership-checked
+// against the caller's scope.
+func (s *Service) AdminRotateTenantConfigSecret(ctx context.Context, req *storagev1.AdminRotateTenantConfigSecretRequest) (*storagev1.AdminRotateTenantConfigSecretResponse, error) {
+	app, err := s.configForTenantScoped(ctx, req.GetTenantKey())
 	if err != nil {
-		return nil, err
-	}
-	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
-	if err != nil {
-		return nil, err
-	}
-	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
 		return nil, err
 	}
 	secret, err := mintAppSecret()
@@ -177,13 +170,13 @@ func (s *Service) AdminRotateAppSecret(ctx context.Context, req *storagev1.Admin
 	s.auditPlatform(ctx, storagev1.AuditAction_AUDIT_ACTION_ADMIN_ROTATE_APP_SECRET,
 		storagev1.AuditLogTargetType_AUDIT_LOG_TARGET_TYPE_APP, app.ID, nil, appSnapshot(app))
 	s.refreshPlatform(ctx)
-	return &storagev1.AdminRotateAppSecretResponse{App: appToProto(app), AppSecret: secret}, nil
+	return &storagev1.AdminRotateTenantConfigSecretResponse{Config: appToProto(app), AppSecret: secret}, nil
 }
 
-// AdminListApps lists the live apps in the caller's scope: for an
-// injected key only the app row mapped to that tenant; the cross-view the
-// whole registry (low cardinality, no paging).
-func (s *Service) AdminListApps(ctx context.Context, _ *storagev1.AdminListAppsRequest) (*storagev1.AdminListAppsResponse, error) {
+// AdminListTenantConfigs lists the live config rows in the caller's scope:
+// for an injected key only the tenant's row; the cross-view the whole
+// registry (one row per tenant, low cardinality, no paging).
+func (s *Service) AdminListTenantConfigs(ctx context.Context, _ *storagev1.AdminListTenantConfigsRequest) (*storagev1.AdminListTenantConfigsResponse, error) {
 	scope, err := scopeFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -192,30 +185,23 @@ func (s *Service) AdminListApps(ctx context.Context, _ *storagev1.AdminListAppsR
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*storagev1.StorageAppInfo, 0, len(apps))
+	out := make([]*storagev1.StorageTenantConfigInfo, 0, len(apps))
 	for _, a := range apps {
 		if !visibleInTenant(scope, a) {
 			continue
 		}
 		out = append(out, appToProto(a))
 	}
-	return &storagev1.AdminListAppsResponse{Apps: out}, nil
+	return &storagev1.AdminListTenantConfigsResponse{Configs: out}, nil
 }
 
-// AdminDeleteApp soft-deletes the app. Data-plane calls fail on the next
-// registry refresh (immediate here); existing objects/files stay readable —
-// their keys are stored on the rows. Ownership-checked against the
-// caller's scope.
-func (s *Service) AdminDeleteApp(ctx context.Context, req *storagev1.AdminDeleteAppRequest) (*emptypb.Empty, error) {
-	scope, err := scopeFromCtx(ctx)
+// AdminDeleteTenantConfig soft-deletes the tenant's config row. Data-plane
+// calls fail on the next registry refresh (immediate here); existing
+// objects/files stay readable — their keys are stored on the rows.
+// Ownership-checked against the caller's scope.
+func (s *Service) AdminDeleteTenantConfig(ctx context.Context, req *storagev1.AdminDeleteTenantConfigRequest) (*emptypb.Empty, error) {
+	app, err := s.configForTenantScoped(ctx, req.GetTenantKey())
 	if err != nil {
-		return nil, err
-	}
-	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
-	if err != nil {
-		return nil, err
-	}
-	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
 		return nil, err
 	}
 	if err := dal.DeleteApp(ctx, s.db, app.ID); err != nil {
@@ -227,10 +213,34 @@ func (s *Service) AdminDeleteApp(ctx context.Context, req *storagev1.AdminDelete
 	return &emptypb.Empty{}, nil
 }
 
+// configForTenantScoped is the resolver every tenant-config RPC funnels
+// through (the T5 appByAppKeyScoped shape, re-keyed to the tenant selector
+// in T6): fail closed on a caller with no trusted identity, resolve the
+// row by tenant_key (legacy NULL-column rows fall back to the app_key
+// literal), then enforce the scope AFTER the row load — a foreign tenant's
+// row answers the same not-found a missing key would (anti-enumeration).
+func (s *Service) configForTenantScoped(ctx context.Context, tenantKey string) (*models.StorageApp, error) {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	app, err := dal.GetAppForTenant(ctx, s.db, tenantKey)
+	if err != nil {
+		return nil, err
+	}
+	if app == nil {
+		return nil, xcodes.ErrAppNotFound.New(fmt.Sprintf("no tenant config for tenant_key %q", tenantKey))
+	}
+	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no tenant config for tenant_key %q", tenantKey))); err != nil {
+		return nil, err
+	}
+	return app, nil
+}
+
 // --- helpers ---
 
-func appToProto(a *models.StorageApp) *storagev1.StorageAppInfo {
-	return &storagev1.StorageAppInfo{
+func appToProto(a *models.StorageApp) *storagev1.StorageTenantConfigInfo {
+	return &storagev1.StorageTenantConfigInfo{
 		Id:        a.ID,
 		AppKey:    a.AppKey,
 		Name:      a.Name,
