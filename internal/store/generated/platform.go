@@ -66,6 +66,7 @@ var StorageApp = struct {
 	AppSecret field.String
 	Name      field.String
 	KeyPrefix field.String
+	TenantKey field.String
 	BucketID  field.Number[int64]
 	Disabled  field.Bool
 	CreatedAt field.Time
@@ -77,6 +78,7 @@ var StorageApp = struct {
 	AppSecret: field.String{}.WithColumn("app_secret"),
 	Name:      field.String{}.WithColumn("name"),
 	KeyPrefix: field.String{}.WithColumn("key_prefix"),
+	TenantKey: field.String{}.WithColumn("tenant_key"),
 	BucketID:  field.Number[int64]{}.WithColumn("bucket_id"),
 	Disabled:  field.Bool{}.WithColumn("disabled"),
 	CreatedAt: field.Time{}.WithColumn("created_at"),

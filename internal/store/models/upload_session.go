@@ -27,8 +27,11 @@ type StorageUploadSession struct {
 	// that app's namespace snapshot at issue time. ConfirmUpload derives the
 	// final content-addressed key from KeyPrefix, keeping confirm
 	// self-contained even if the app is deleted or re-bound mid-flight.
+	// TenantKey snapshots the issuing caller's tenant (phase ③ write-path
+	// switch; NULL on pre-③ rows until the migration backfill heals them).
 	AppKey      string  `gorm:"column:app_key;type:varchar(64);not null;default:''" json:"app_key"`
 	KeyPrefix   string  `gorm:"column:key_prefix;type:varchar(64);not null;default:''" json:"key_prefix"`
+	TenantKey   *string `gorm:"column:tenant_key;type:varchar(16)" json:"tenant_key,omitempty"`
 	MD5         string  `gorm:"column:md5;type:varchar(32);not null;index:idx_upload_sessions_pending_dedup,priority:3" json:"md5"`
 	Size        int64   `gorm:"column:size;not null;index:idx_upload_sessions_pending_dedup,priority:4" json:"size"`
 	ContentType string  `gorm:"column:content_type;type:varchar(128);not null" json:"content_type"`

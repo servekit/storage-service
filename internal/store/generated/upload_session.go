@@ -15,6 +15,7 @@ var StorageUploadSession = struct {
 	ObjectKey   field.String
 	AppKey      field.String
 	KeyPrefix   field.String
+	TenantKey   field.String
 	MD5         field.String
 	Size        field.Number[int64]
 	ContentType field.String
@@ -38,6 +39,7 @@ var StorageUploadSession = struct {
 	ObjectKey:   field.String{}.WithColumn("object_key"),
 	AppKey:      field.String{}.WithColumn("app_key"),
 	KeyPrefix:   field.String{}.WithColumn("key_prefix"),
+	TenantKey:   field.String{}.WithColumn("tenant_key"),
 	MD5:         field.String{}.WithColumn("md5"),
 	Size:        field.Number[int64]{}.WithColumn("size"),
 	ContentType: field.String{}.WithColumn("content_type"),

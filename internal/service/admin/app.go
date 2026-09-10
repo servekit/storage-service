@@ -24,8 +24,9 @@ import (
 )
 
 // AdminCreateApp registers a calling application. app_key empty = minted
-// server-side (collision-checked). The secret is echoed on every read of
-// StorageAppInfo.
+// server-side (collision-checked). tenant_key empty = the app_key literal
+// (the phase ③ legacy→tenant mapping the migration backfill also writes);
+// unique across apps. The secret is echoed on every read of StorageAppInfo.
 func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreateAppRequest) (*storagev1.AdminCreateAppResponse, error) {
 	if req.GetKeyPrefix() == "" {
 		return nil, xcodes.ErrBadRequest.New("key_prefix is required")
@@ -47,6 +48,18 @@ func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreate
 	} else if n > 0 {
 		return nil, xcodes.ErrPrefixTaken.New(fmt.Sprintf("key_prefix %q already in use", req.GetKeyPrefix()))
 	}
+	// Phase ③ tenant mapping: explicit tenant_key wins; empty defaults to the
+	// app_key literal (window fallback). Duplicate mappings are rejected here
+	// so the operator gets a friendly error rather than the DB unique index.
+	tenantKey := req.GetTenantKey()
+	if tenantKey == "" {
+		tenantKey = appKey
+	}
+	if n, err := dal.CountAppsByTenantKey(ctx, s.db, tenantKey); err != nil {
+		return nil, err
+	} else if n > 0 {
+		return nil, xcodes.ErrAppExists.New(fmt.Sprintf("tenant_key %q already mapped to another app", tenantKey))
+	}
 	if req.GetBucketId() != 0 {
 		if _, err := dal.GetBucketByID(ctx, s.db, req.GetBucketId()); err != nil {
 			return nil, err
@@ -67,6 +80,7 @@ func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreate
 		AppSecret: secret,
 		Name:      req.GetName(),
 		KeyPrefix: req.GetKeyPrefix(),
+		TenantKey: models.TenantKeyPtr(tenantKey),
 		BucketID:  req.GetBucketId(),
 	}
 	if err := dal.CreateApp(ctx, s.db, app); err != nil {
@@ -183,6 +197,7 @@ func appToProto(a *models.StorageApp) *storagev1.StorageAppInfo {
 		CreatedAt: a.CreatedAt.Unix(),
 		UpdatedAt: a.UpdatedAt.Unix(),
 		AppSecret: a.AppSecret,
+		TenantKey: models.TenantKeyOf(a.TenantKey),
 	}
 }
 
@@ -190,6 +205,7 @@ func appSnapshot(a *models.StorageApp) map[string]any {
 	return map[string]any{
 		"app_key": a.AppKey, "name": a.Name, "key_prefix": a.KeyPrefix,
 		"bucket_id": a.BucketID, "disabled": a.Disabled,
+		"tenant_key": models.TenantKeyOf(a.TenantKey),
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
 	"github.com/servekit/storage-service/internal/service/conv"
-	"github.com/servekit/storage-service/internal/store/models"
+	"github.com/servekit/storage-service/internal/tenantres"
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"github.com/servekit/go-common/gorx"
@@ -23,10 +23,11 @@ import (
 // Per-file processing runs concurrently with bounded parallelism; item order
 // matches request order regardless of completion order.
 func (s *Service) BatchGetSTSCredential(ctx context.Context, req *storagev1.BatchGetSTSCredentialRequest) (*storagev1.BatchGetSTSCredentialResponse, error) {
-	app, err := s.authenticateApp(ctx)
+	caller, err := s.authenticate(ctx)
 	if err != nil {
 		return nil, err
 	}
+	app := caller.App
 	ownerType := int32(req.GetOwner().GetOwnerType())
 	ownerID := req.GetOwner().GetOwnerId()
 	bucket, err := s.appBucket(app, req.GetVisibility())
@@ -67,7 +68,7 @@ func (s *Service) BatchGetSTSCredential(ctx context.Context, req *storagev1.Batc
 		i, f := i, f
 		group.RunSafe(func() {
 			runner.Schedule(func() {
-				items[i] = s.processOneUpload(ctx, app, ownerType, ownerID, bucket, ttl, f, req.GetRequestId(), allowedExt)
+				items[i] = s.processOneUpload(ctx, caller, ownerType, ownerID, bucket, ttl, f, req.GetRequestId(), allowedExt)
 			})
 		})
 	}
@@ -125,7 +126,7 @@ func (s *Service) BatchGetSTSCredential(ctx context.Context, req *storagev1.Batc
 // processOneUpload runs the per-file flow and maps the result/error into an
 // UploadCredentialItem oneof. Errors are reported per-item (not propagated)
 // so a single bad file does not fail the whole batch.
-func (s *Service) processOneUpload(ctx context.Context, app *models.StorageApp, ownerType int32, ownerID int64, bucket string, ttl time.Duration, f *storagev1.UploadFileMeta, requestID string, allowedExtensions []string) *storagev1.UploadCredentialItem {
+func (s *Service) processOneUpload(ctx context.Context, caller *tenantres.Caller, ownerType int32, ownerID int64, bucket string, ttl time.Duration, f *storagev1.UploadFileMeta, requestID string, allowedExtensions []string) *storagev1.UploadCredentialItem {
 	// Per-file fail-fast: reject disallowed extensions before any STS call.
 	// Mirrors the single-path check in GetSTSCredential; reported as an
 	// ItemError so the rest of the batch can still succeed.
@@ -152,7 +153,7 @@ func (s *Service) processOneUpload(ctx context.Context, app *models.StorageApp, 
 		metadata:    f.GetMetadata(),
 		requestID:   requestID,
 	}
-	result, err := s.issueUploadCredential(ctx, app, ownerType, ownerID, bucket, ttl, file)
+	result, err := s.issueUploadCredential(ctx, caller, ownerType, ownerID, bucket, ttl, file)
 	if err != nil {
 		// issueUploadCredential wraps failures in xerr (e.g. ErrQuotaExceeded).
 		// Surface the stable Reason as ItemError.Code so callers can branch on it

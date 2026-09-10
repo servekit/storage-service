@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -28,6 +29,7 @@ type Registry struct {
 	bucketsByID     map[int64]*config.BucketConfig
 	bucketProviders map[string]string             // bucket name -> provider name
 	apps            map[string]*models.StorageApp // app_key -> live app
+	appsByTenant    map[string]*models.StorageApp // resolved tenant_key (column, app_key fallback) -> live app (phase ③)
 	providerConfigs map[string]*config.ProviderConfig
 	cdnGenerators   map[string]types.CDNURLGenerator // bucket name -> generator; absent = CDN disabled for that bucket
 	disabled        map[string]bool                  // provider name -> disabled (readable, not writable)
@@ -72,6 +74,7 @@ func NewRegistry(providers []*config.ProviderConfig) (*Registry, error) {
 		cdnGenerators:   make(map[string]types.CDNURLGenerator),
 		disabled:        make(map[string]bool),
 		apps:            make(map[string]*models.StorageApp),
+		appsByTenant:    make(map[string]*models.StorageApp),
 	}
 
 	for _, pc := range providers {
@@ -119,6 +122,7 @@ func (r *Registry) Rebuild(providers []*config.ProviderConfig, apps []*models.St
 		cdnGenerators:   make(map[string]types.CDNURLGenerator),
 		disabled:        make(map[string]bool),
 		apps:            make(map[string]*models.StorageApp),
+		appsByTenant:    make(map[string]*models.StorageApp),
 	}
 	for _, pc := range providers {
 		if pc == nil {
@@ -154,6 +158,7 @@ func (r *Registry) Rebuild(providers []*config.ProviderConfig, apps []*models.St
 			continue
 		}
 		next.apps[a.AppKey] = a
+		indexByTenant(next.appsByTenant, a)
 	}
 
 	r.mu.Lock()
@@ -165,6 +170,7 @@ func (r *Registry) Rebuild(providers []*config.ProviderConfig, apps []*models.St
 	r.cdnGenerators = next.cdnGenerators
 	r.disabled = next.disabled
 	r.apps = next.apps
+	r.appsByTenant = next.appsByTenant
 	r.mu.Unlock()
 	return nil
 }
@@ -178,17 +184,45 @@ func (r *Registry) App(appKey string) *models.StorageApp {
 	return r.apps[appKey]
 }
 
+// AppByTenant resolves the tenant's config row by resolved tenant key
+// (tenant_key column, app_key literal fallback for un-backfilled rows);
+// nil when no app maps to the tenant (phase ③ dual-stack window).
+func (r *Registry) AppByTenant(tenantKey string) *models.StorageApp {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.appsByTenant[tenantKey]
+}
+
 // SetApps replaces the app snapshot without rebuilding providers. Test /
 // bootstrap aid — production refreshes go through Rebuild.
 func (r *Registry) SetApps(apps []*models.StorageApp) {
 	r.mu.Lock()
 	next := make(map[string]*models.StorageApp, len(apps))
+	byTenant := make(map[string]*models.StorageApp, len(apps))
 	for _, a := range apps {
 		if a != nil {
 			next[a.AppKey] = a
+			indexByTenant(byTenant, a)
 		}
 	}
 	r.apps = next
+	r.appsByTenant = byTenant
+	r.mu.Unlock()
+}
+
+// MergeApp merges one app row into the live snapshot (both indexes) without
+// rebuilding providers. Used by the first-sight trusted path (tenantres) so
+// subsequent calls resolve the fresh tenant lock-free; the cron refresh
+// converges the full snapshot within a minute regardless.
+func (r *Registry) MergeApp(a *models.StorageApp) {
+	if a == nil {
+		return
+	}
+	r.mu.Lock()
+	r.apps[a.AppKey] = a
+	if tenant := models.AppTenantKey(a); tenant != "" {
+		r.appsByTenant[tenant] = a
+	}
 	r.mu.Unlock()
 }
 
@@ -394,6 +428,22 @@ func (r *Registry) VendorForBucket(bucket string) storagev1.Vendor {
 
 // --- internal helpers ---
 
+// indexByTenant adds app to the tenant index under its resolved tenant key
+// (tenant_key column, app_key literal fallback). A duplicate mapping keeps
+// the first row and logs loudly — the deploy backfill guarantees uniqueness,
+// so a duplicate means operator mischief (phase ③ window).
+func indexByTenant(byTenant map[string]*models.StorageApp, a *models.StorageApp) {
+	tenant := models.AppTenantKey(a)
+	if tenant == "" {
+		return
+	}
+	if _, dup := byTenant[tenant]; dup {
+		slog.Error("registry: duplicate tenant mapping (keeping first)", "tenant", tenant, "app", a.AppKey)
+		return
+	}
+	byTenant[tenant] = a
+}
+
 func newProvider(cfg *config.ProviderConfig) (Provider, error) {
 	v, ok := storagev1.Vendor_value[cfg.Vendor]
 	if !ok {
@@ -544,6 +594,7 @@ func NewRegistryWithProvider(cfg *config.ProviderConfig, p Provider, cdnGenerato
 		providerConfigs: map[string]*config.ProviderConfig{cfg.Name: cfg},
 		cdnGenerators:   make(map[string]types.CDNURLGenerator),
 		apps:            make(map[string]*models.StorageApp),
+		appsByTenant:    make(map[string]*models.StorageApp),
 	}
 	for _, bc := range cfg.Buckets {
 		r.buckets[bc.Name] = bc

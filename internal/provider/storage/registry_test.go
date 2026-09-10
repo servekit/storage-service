@@ -3,6 +3,8 @@ package storage
 import (
 	"testing"
 
+	"github.com/servekit/storage-service/internal/store/models"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -184,4 +186,27 @@ func TestNewCDNURLGenerator_VolcengineWiring(t *testing.T) {
 	gen, err := newCDNURLGenerator("VENDOR_VOLCENGINE_TOS", cdn)
 	require.NoError(t, err)
 	require.NotNil(t, gen)
+}
+
+// TestRegistryAppByTenant pins the phase ③ tenant index: rows resolve by
+// their tenant_key column, un-backfilled rows fall back to the app_key
+// literal, duplicate mappings keep the first row, and MergeApp converges a
+// freshly created tenant row without a full rebuild.
+func TestRegistryAppByTenant(t *testing.T) {
+	reg, err := NewRegistry(nil)
+	require.NoError(t, err)
+
+	mapped := &models.StorageApp{ID: 1, AppKey: "app-a", KeyPrefix: "a/", TenantKey: models.TenantKeyPtr("ten_mapped000000")}
+	unmapped := &models.StorageApp{ID: 2, AppKey: "app-b", KeyPrefix: "b/"}
+	dup := &models.StorageApp{ID: 3, AppKey: "app-c", KeyPrefix: "c/", TenantKey: models.TenantKeyPtr("ten_mapped000000")}
+	reg.SetApps([]*models.StorageApp{mapped, unmapped, dup})
+
+	assert.Same(t, mapped, reg.AppByTenant("ten_mapped000000"), "duplicate tenant mapping keeps the first row")
+	assert.Same(t, unmapped, reg.AppByTenant("app-b"), "NULL column falls back to the app_key literal")
+	assert.Nil(t, reg.AppByTenant("ten_ghost00000000"), "unknown tenant resolves nil")
+
+	fresh := &models.StorageApp{ID: 4, AppKey: "ten_new0000000001", KeyPrefix: "ten_new0000000001/", TenantKey: models.TenantKeyPtr("ten_new0000000001")}
+	reg.MergeApp(fresh)
+	assert.Same(t, fresh, reg.AppByTenant("ten_new0000000001"), "MergeApp converges the tenant index without a rebuild")
+	assert.Same(t, fresh, reg.App("ten_new0000000001"))
 }

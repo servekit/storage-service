@@ -140,6 +140,9 @@ func seedBootstrapApp(db *gorm.DB, ba *config.BootstrapAppConfig) error {
 		row := &models.StorageApp{
 			ID: seedNextID(db), AppKey: ba.AppKey, AppSecret: ba.AppSecret,
 			Name: ba.Name, KeyPrefix: ba.KeyPrefix, BucketID: ba.BucketID,
+			// Phase ③ mapping: the bootstrap app maps to its app_key literal
+			// (same value the migration backfill writes for existing rows).
+			TenantKey: models.TenantKeyPtr(ba.AppKey),
 		}
 		if row.Name == "" {
 			row.Name = ba.AppKey

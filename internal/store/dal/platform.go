@@ -12,6 +12,7 @@ import (
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // --- Providers ---
@@ -262,6 +263,60 @@ func CreateApp(ctx context.Context, tx *gorm.DB, a *models.StorageApp) error {
 		return xcodes.ErrInternal.Wrap(err)
 	}
 	return nil
+}
+
+// EnsureTenantApp idempotently inserts the first-sight tenant config row
+// (trusted x-tenant-key path). The conflict target is intentionally left
+// broad (ON CONFLICT DO NOTHING, no column list): the lazy row can collide
+// on app_key OR on key_prefix ("{tenant_key}/" — an operator may have
+// pre-created it), and racing replicas must converge on one row either way.
+// The caller re-reads after the insert, so DoNothing never clobbers
+// operator edits.
+func EnsureTenantApp(ctx context.Context, tx *gorm.DB, record *models.StorageApp) error {
+	if err := gorm.G[models.StorageApp](tx, clause.OnConflict{
+		DoNothing: true,
+	}).Create(ctx, record); err != nil {
+		return xcodes.ErrInternal.Wrap(err)
+	}
+	return nil
+}
+
+// GetAppForTenant resolves the tenant's config row: prefer the tenant_key
+// mapping, fall back to app_key = tenantKey (pre-backfill window rows whose
+// column is still NULL). nil when neither matches.
+func GetAppForTenant(ctx context.Context, tx *gorm.DB, tenantKey string) (*models.StorageApp, error) {
+	record, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.TenantKey.Eq(tenantKey)).
+		Take(ctx)
+	if err == nil {
+		return &record, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	record, err = gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.AppKey.Eq(tenantKey)).
+		Take(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, xcodes.ErrInternal.Wrap(err)
+	}
+	return &record, nil
+}
+
+// CountAppsByTenantKey guards the admin create path: tenant_key uniqueness
+// over live rows (the DB unique index is the last line of defense; this
+// gives the operator a friendly error instead of an internal one).
+func CountAppsByTenantKey(ctx context.Context, tx *gorm.DB, tenantKey string) (int64, error) {
+	n, err := gorm.G[models.StorageApp](tx).
+		Where(generated.StorageApp.TenantKey.Eq(tenantKey)).
+		Count(ctx, "*")
+	if err != nil {
+		return 0, xcodes.ErrInternal.Wrap(err)
+	}
+	return n, nil
 }
 
 // GetApp returns the app by id, or ErrAppNotFound.
