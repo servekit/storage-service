@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/servekit/storage-service/internal/appauth"
+	"google.golang.org/grpc/metadata"
+
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/service/platform"
 	"github.com/servekit/storage-service/internal/store/dal"
@@ -13,10 +14,20 @@ import (
 	"github.com/servekit/storage-service/pkg/xcodes"
 
 	"github.com/servekit/go-common/dbx"
+	"github.com/servekit/go-common/tenantctx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+// legacyCtx plants the deleted stack's wire shape (a complete x-app-key/
+// x-app-secret pair) — anti-regression fixtures only.
+func legacyCtx(ctx context.Context, appKey, appSecret string) context.Context {
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(
+		"x-app-key", appKey,
+		"x-app-secret", appSecret,
+	))
+}
 
 func setup(t *testing.T) (*Resolver, *gorm.DB, *storage.Registry) {
 	t.Helper()
@@ -47,7 +58,7 @@ func seedApp(t *testing.T, db *gorm.DB, reg *storage.Registry, id int64, appKey,
 // the second call reuses the row and resolves through the registry snapshot.
 func TestRequireTrustedLazilyCreatesConfigRowWithDerivedPrefix(t *testing.T) {
 	r, db, reg := setup(t)
-	ctx := appauth.WithTenant(context.Background(), "ten_abc123def456")
+	ctx := tenantctx.WithTenant(context.Background(), "ten_abc123def456")
 
 	c1, err := r.Require(ctx)
 	require.NoError(t, err)
@@ -77,9 +88,10 @@ func TestRequireTrustedLazilyCreatesConfigRowWithDerivedPrefix(t *testing.T) {
 // also the dedup domain.
 func TestRequireTrustedKeepsExistingPrefixImmutable(t *testing.T) {
 	r, db, _ := setup(t)
-	seedApp(t, db, r.reg, 10, "sto_8blto9j5", "s0", "demo-b/", models.TenantKeyPtr("sto_8blto9j5"))
+	const key = "ten_keep00000000"
+	seedApp(t, db, r.reg, 10, "sto_8blto9j5", "s0", "demo-b/", models.TenantKeyPtr(key))
 
-	c, err := r.Require(appauth.WithTenant(context.Background(), "sto_8blto9j5"))
+	c, err := r.Require(tenantctx.WithTenant(context.Background(), key))
 	require.NoError(t, err)
 	require.NotNil(t, c.App)
 	assert.Equal(t, int64(10), c.App.ID, "the existing config row must be reused")
@@ -96,30 +108,56 @@ func TestRequireTrustedKeepsExistingPrefixImmutable(t *testing.T) {
 // discarded — a proxy-forwarded caller cannot impersonate another tenant.
 func TestRequireTrustedAuthoritativeOverSmuggledLegacyCreds(t *testing.T) {
 	r, db, reg := setup(t)
-	seedApp(t, db, reg, 20, "beta-app", "beta-secret", "beta/", models.TenantKeyPtr("ten_beta0000000"))
+	seedApp(t, db, reg, 20, "beta-app", "beta-secret", "beta/", models.TenantKeyPtr("ten_beta00000000"))
 
-	ctx := appauth.WithTenant(appauth.WithApp(context.Background(), "beta-app", "beta-secret"), "ten_alpha0000000")
+	ctx := tenantctx.WithTenant(legacyCtx(context.Background(), "beta-app", "beta-secret"), "ten_alpha0000000")
 	c, err := r.Require(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "ten_alpha0000000", c.TenantKey)
 	assert.NotEqual(t, int64(20), c.App.ID, "the smuggled app row must not be the caller")
 }
 
-// TestRequireLegacyValidatesAndConvertsToTenant: the legacy ak/sk path keeps
-// its verification and converts the app to its mapped tenant_key; an empty
-// column falls back to the app_key literal (T10 总装 clears the empties).
-func TestRequireLegacyValidatesAndConvertsToTenant(t *testing.T) {
+// TestRequireLegacyCredentialsRejected (④ window close): the legacy ak/sk
+// stack no longer authenticates — even previously-VALID pairs (mapped or
+// unmapped) answer ErrAppUnauthorized. Pinned against accidental
+// resurrection of the deleted path.
+func TestRequireLegacyCredentialsRejected(t *testing.T) {
 	r, db, reg := setup(t)
 	seedApp(t, db, reg, 30, "legacy-mapped", "s1", "mapped/", models.TenantKeyPtr("ten_mapped000000"))
 	seedApp(t, db, reg, 31, "legacy-unmapped", "s2", "unmapped/", nil)
 
-	c, err := r.Require(appauth.WithApp(context.Background(), "legacy-mapped", "s1"))
-	require.NoError(t, err)
-	assert.Equal(t, "ten_mapped000000", c.TenantKey)
+	_, err := r.Require(legacyCtx(context.Background(), "legacy-mapped", "s1"))
+	assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New(), "a previously-valid mapped pair must now be unauthenticated")
 
-	c, err = r.Require(appauth.WithApp(context.Background(), "legacy-unmapped", "s2"))
+	_, err = r.Require(legacyCtx(context.Background(), "legacy-unmapped", "s2"))
+	assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New(), "a previously-valid unmapped pair must now be unauthenticated")
+
+	_, err = r.Require(legacyCtx(context.Background(), "legacy-mapped", "wrong"))
+	assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New())
+}
+
+// TestRequireTrustedMalformedKeyRejected (④ window close): the trusted key
+// is format-validated before any registry/DB lookup or lazy create —
+// legacy app_key literals and other malformed values answer
+// ErrAppUnauthorized and never mint a config row.
+func TestRequireTrustedMalformedKeyRejected(t *testing.T) {
+	r, db, _ := setup(t)
+
+	for _, key := range []string{
+		"beta-app",            // legacy app_key literal
+		"sto_8blto9j5",        // minted app_key shape
+		"testkit",             // legacy alias literal
+		"ten_UPPERCASE00",     // uppercase
+		"ten_short0",          // too short
+		"ten_abc123def456789", // too long
+		"ten_platform_system", // reserved literal with a suffix
+	} {
+		_, err := r.Require(tenantctx.WithTenant(context.Background(), key))
+		assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New(), "malformed key %q must fail closed", key)
+	}
+	apps, err := dal.ListApps(context.Background(), db)
 	require.NoError(t, err)
-	assert.Equal(t, "legacy-unmapped", c.TenantKey, "empty column falls back to the app_key literal")
+	require.Empty(t, apps, "malformed keys must not lazily create config rows")
 }
 
 // TestRequireTrustedReusesUnbackfilledRow: a trusted key equal to an existing
@@ -127,12 +165,13 @@ func TestRequireLegacyValidatesAndConvertsToTenant(t *testing.T) {
 // that row instead of creating a duplicate — and must keep its prefix.
 func TestRequireTrustedReusesUnbackfilledRow(t *testing.T) {
 	r, db, _ := setup(t)
-	seedApp(t, db, r.reg, 40, "testkit", "s3", "testkit/", nil)
+	const key = "ten_backfill0000"
+	seedApp(t, db, r.reg, 40, key, "s3", key+"/", nil)
 
-	c, err := r.Require(appauth.WithTenant(context.Background(), "testkit"))
+	c, err := r.Require(tenantctx.WithTenant(context.Background(), key))
 	require.NoError(t, err)
 	assert.Equal(t, int64(40), c.App.ID)
-	assert.Equal(t, "testkit/", c.App.KeyPrefix, "un-backfilled row keeps its prefix")
+	assert.Equal(t, key+"/", c.App.KeyPrefix, "un-backfilled row keeps its prefix")
 
 	apps, err := dal.ListApps(context.Background(), db)
 	require.NoError(t, err)
@@ -148,7 +187,7 @@ func TestRequireTrustedReusesUnbackfilledRow(t *testing.T) {
 // (key_prefix immutable — objects may live under it; app_secret; name).
 func TestRequireTrustedRevivesSoftDeletedOccupant(t *testing.T) {
 	r, db, _ := setup(t)
-	const tenantKey = "ten_dead0000000"
+	const tenantKey = "ten_dead00000000"
 
 	// Occupant shape 1: a lazily-shaped row (app_key = tenant_key, mapping
 	// column set) that an operator soft-deleted via the admin surface.
@@ -160,7 +199,7 @@ func TestRequireTrustedRevivesSoftDeletedOccupant(t *testing.T) {
 	require.NoError(t, db.Model(&models.StorageApp{}).Where("id = ?", dead.ID).
 		Update("deleted_at", time.Now()).Error)
 
-	c, err := r.Require(appauth.WithTenant(context.Background(), tenantKey))
+	c, err := r.Require(tenantctx.WithTenant(context.Background(), tenantKey))
 	require.NoError(t, err, "a soft-deleted occupant must be revived, not 500")
 	require.Equal(t, tenantKey, c.TenantKey)
 	require.Equal(t, dead.ID, c.App.ID, "the occupant row is revived in place")
@@ -183,7 +222,7 @@ func TestRequireTrustedRevivesSoftDeletedOccupant(t *testing.T) {
 // the mapping column so subsequent resolution prefers tenant_key.
 func TestRequireTrustedRevivesSoftDeletedUnmappedOccupant(t *testing.T) {
 	r, db, _ := setup(t)
-	const tenantKey = "ten_unmap000000"
+	const tenantKey = "ten_unmapped0000"
 
 	dead := &models.StorageApp{
 		AppKey: tenantKey, AppSecret: "s", Name: tenantKey,
@@ -193,29 +232,63 @@ func TestRequireTrustedRevivesSoftDeletedUnmappedOccupant(t *testing.T) {
 	require.NoError(t, db.Model(&models.StorageApp{}).Where("id = ?", dead.ID).
 		Update("deleted_at", time.Now()).Error)
 
-	c, err := r.Require(appauth.WithTenant(context.Background(), tenantKey))
+	c, err := r.Require(tenantctx.WithTenant(context.Background(), tenantKey))
 	require.NoError(t, err)
 	require.Equal(t, dead.ID, c.App.ID)
 	require.Equal(t, tenantKey, models.TenantKeyOf(c.App.TenantKey),
 		"revive re-points the mapping column")
 }
 
-// TestRequireFailureModes: bad secret / unknown app / no credentials /
-// disabled config row all fail closed with ErrAppUnauthorized.
+// TestRequireTrustedLiveOccupantPreferredOverDead (③-review F2 corner): when
+// the unscoped occupant lookup can match BOTH a LIVE row and a soft-deleted
+// one (a pre-backfill live row on app_key=tenant_key with a NULL mapping
+// column, plus a soft-deleted alias row still holding tenant_key), the
+// live-first ordering must pick the live row — the dead one stays dead
+// instead of being revived into a second claimant of the tenant's keys.
+func TestRequireTrustedLiveOccupantPreferredOverDead(t *testing.T) {
+	r, db, _ := setup(t)
+	const tenantKey = "ten_live00000000"
+
+	live := &models.StorageApp{
+		AppKey: tenantKey, AppSecret: "live-secret", Name: "live",
+		KeyPrefix: tenantKey + "/", TenantKey: nil,
+	}
+	require.NoError(t, db.Create(live).Error)
+	dead := &models.StorageApp{
+		AppKey: "sto_oldalias2", AppSecret: "old-secret", Name: "dead",
+		KeyPrefix: "old/", TenantKey: models.TenantKeyPtr(tenantKey),
+	}
+	require.NoError(t, db.Create(dead).Error)
+	require.NoError(t, db.Model(&models.StorageApp{}).Where("id = ?", dead.ID).
+		Update("deleted_at", time.Now()).Error)
+
+	c, err := r.Require(tenantctx.WithTenant(context.Background(), tenantKey))
+	require.NoError(t, err)
+	require.Equal(t, live.ID, c.App.ID, "the LIVE occupant must win the unscoped lookup")
+	require.Equal(t, "live-secret", c.App.AppSecret)
+
+	var still int64
+	require.NoError(t, db.Unscoped().Model(&models.StorageApp{}).
+		Where("id = ? AND deleted_at IS NOT NULL", dead.ID).Count(&still).Error)
+	require.EqualValues(t, 1, still, "the dead occupant must stay dead when a live one exists")
+}
+
+// TestRequireFailureModes: no credentials / a previously-valid legacy pair /
+// a disabled config row all fail closed with ErrAppUnauthorized.
 func TestRequireFailureModes(t *testing.T) {
 	r, db, reg := setup(t)
 	seedApp(t, db, reg, 50, "known", "right", "known/", nil)
 
-	_, err := r.Require(appauth.WithApp(context.Background(), "known", "wrong"))
-	assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New())
+	_, err := r.Require(legacyCtx(context.Background(), "known", "right"))
+	assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New(), "a previously-valid legacy pair must now be unauthenticated")
 
-	_, err = r.Require(appauth.WithApp(context.Background(), "ghost", "whatever"))
+	_, err = r.Require(legacyCtx(context.Background(), "ghost", "whatever"))
 	assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New())
 
 	_, err = r.Require(context.Background())
 	assert.ErrorIs(t, err, xcodes.ErrAppUnauthorized.New())
 
-	ctx := appauth.WithTenant(context.Background(), "ten_dead0000000")
+	ctx := tenantctx.WithTenant(context.Background(), "ten_dead00000000")
 	c, err := r.Require(ctx)
 	require.NoError(t, err)
 	c.App.Disabled = true

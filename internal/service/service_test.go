@@ -15,11 +15,11 @@ import (
 	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/lifecycle"
 	"github.com/servekit/go-common/redisx"
+	"github.com/servekit/go-common/tenantctx"
 
 	gidv1 "github.com/servekit/api/gen/go/gid/v1"
 	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
-	"github.com/servekit/storage-service/internal/appauth"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/provider/storage/types"
@@ -158,9 +158,10 @@ func testApp() *models.StorageApp {
 	}
 }
 
-// appCtx wraps ctx with the test app credentials.
+// appCtx wraps ctx with the trusted test-tenant key (upload.TestTenantKey's
+// service-root mirror).
 func appCtx(ctx context.Context) context.Context {
-	return appauth.WithApp(ctx, "test-app", "test-secret")
+	return tenantctx.WithTenant(ctx, "ten_testapp00001")
 }
 
 // setupManagerForTest initializes the lifecycle.Manager field for a directly

@@ -208,5 +208,4 @@ func TestRegistryAppByTenant(t *testing.T) {
 	fresh := &models.StorageApp{ID: 4, AppKey: "ten_new0000000001", KeyPrefix: "ten_new0000000001/", TenantKey: models.TenantKeyPtr("ten_new0000000001")}
 	reg.MergeApp(fresh)
 	assert.Same(t, fresh, reg.AppByTenant("ten_new0000000001"), "MergeApp converges the tenant index without a rebuild")
-	assert.Same(t, fresh, reg.App("ten_new0000000001"))
 }

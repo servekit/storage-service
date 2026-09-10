@@ -175,18 +175,9 @@ func (r *Registry) Rebuild(providers []*config.ProviderConfig, apps []*models.St
 	return nil
 }
 
-// App returns the live app row for app_key (nil when absent — callers fail
-// closed on the data plane). Disabled apps are returned with their Disabled
-// flag set; the auth check rejects them.
-func (r *Registry) App(appKey string) *models.StorageApp {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.apps[appKey]
-}
-
 // AppByTenant resolves the tenant's config row by resolved tenant key
 // (tenant_key column, app_key literal fallback for un-backfilled rows);
-// nil when no app maps to the tenant (phase ③ dual-stack window).
+// nil when no app maps to the tenant.
 func (r *Registry) AppByTenant(tenantKey string) *models.StorageApp {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

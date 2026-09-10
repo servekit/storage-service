@@ -8,10 +8,10 @@ import (
 
 	"github.com/servekit/go-common/dbx"
 	"github.com/servekit/go-common/redisx"
+	"github.com/servekit/go-common/tenantctx"
 
 	gidv1 "github.com/servekit/api/gen/go/gid/v1"
 	gidservice "github.com/servekit/gid-service/pkg"
-	"github.com/servekit/storage-service/internal/appauth"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/provider/storage/fake"
 	"github.com/servekit/storage-service/internal/store/models"
@@ -115,16 +115,22 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 	return svc, fp, db
 }
 
-// testApp is the app every data-plane test call authenticates as. Its
-// key_prefix keeps the legacy bucket prefix so key-shape assertions hold.
+// testApp is the directory every data-plane test call authenticates as. Its
+// key_prefix keeps the legacy bucket prefix so key-shape assertions hold,
+// and its app_key is a canonical tenant_key (the only credential stack
+// since the ④ window close).
 func testApp() *models.StorageApp {
 	return &models.StorageApp{
-		ID: 1, AppKey: "test-app", AppSecret: "test-secret",
+		ID: 1, AppKey: TestTenantKey, AppSecret: "test-secret",
 		KeyPrefix: "uploads/", Name: "test app",
+		TenantKey: models.TenantKeyPtr(TestTenantKey),
 	}
 }
 
-// appCtx wraps ctx with the test app credentials.
+// TestTenantKey is the canonical-format fixture key (spec §3).
+const TestTenantKey = "ten_testapp00001"
+
+// appCtx wraps ctx with the trusted test-tenant key.
 func appCtx(ctx context.Context) context.Context {
-	return appauth.WithApp(ctx, "test-app", "test-secret")
+	return tenantctx.WithTenant(ctx, TestTenantKey)
 }

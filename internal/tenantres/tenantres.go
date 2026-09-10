@@ -1,21 +1,19 @@
-// Package tenantres resolves the upload path's calling identity during the
-// phase ③ dual-stack window (recipe step 1, rule D-③1):
+// Package tenantres resolves the upload path's calling identity. Since the
+// ④ window close the trusted x-tenant-key (injected by the portal proxy)
+// is the ONLY credential stack:
 //
-//   - SourceTrusted (x-tenant-key, injected by the portal proxy): the tenant
-//     key IS the tenant context. The per-tenant config row (storage_apps row
-//     carrying the key_prefix namespace) is resolved by the tenant_key
-//     mapping and lazily upserted on first sight with the derived default
-//     key_prefix "{tenant_key}/" — EXISTING rows keep their stored prefix
-//     verbatim (immutability: objects already live under it, and it is the
-//     dedup domain).
-//   - SourceLegacy (x-app-key/x-app-secret): the pre-③ app validation,
-//     unchanged; the validated app is then converted to the tenant its row
-//     maps to (tenant_key column; empty column falls back to the app_key
-//     literal — T10 总装 clears the empties).
-//   - SourceNone: unauthenticated, fail closed.
+//   - the key is format-validated first (tenantctx.ValidTenantKey — the
+//     canonical ten_[0-9a-z]{12} shape plus the reserved ten_platform /
+//     ten_legacy literals); malformed keys fail closed before any lookup
+//     or lazy create;
+//   - the per-tenant config row (storage_apps row carrying the key_prefix
+//     namespace) is resolved by the tenant_key mapping and lazily upserted
+//     on first sight with the derived default key_prefix "{tenant_key}/" —
+//     EXISTING rows keep their stored prefix verbatim (immutability:
+//     objects already live under it, and it is the dedup domain).
 //
-// The whole package (and the legacy half of appauth) is deleted when the
-// window closes (phase ④).
+// Verification is service-layer (not an interceptor) so module-mode
+// in-process callers share the same path as gRPC clients.
 package tenantres
 
 import (
@@ -26,9 +24,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/servekit/go-common/dualauth"
+	"github.com/servekit/go-common/tenantctx"
 
-	"github.com/servekit/storage-service/internal/appauth"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
@@ -39,11 +36,10 @@ import (
 // keying hangs off (session/file rows, token namespace) plus the config row
 // that owns the caller's key_prefix namespace and bucket binding.
 type Caller struct {
-	// TenantKey is the authoritative tenant context ("ten_..." or a legacy
-	// app_key literal through the window).
+	// TenantKey is the authoritative tenant context ("ten_..." or one of
+	// the reserved literals).
 	TenantKey string
-	// App is the config row: the validated app on the legacy path, the
-	// tenant's (possibly just-created) row on the trusted path.
+	// App is the tenant's (possibly just-created) config row.
 	App *models.StorageApp
 }
 
@@ -60,22 +56,21 @@ func New(db *gorm.DB, reg *storage.Registry) *Resolver {
 	return &Resolver{db: db, reg: reg}
 }
 
-// Require classifies the caller's credential stack (appauth.Resolve, D-③1)
-// and resolves the Caller, failing closed with ErrAppUnauthorized on missing
-// credentials, unknown/disabled apps, or a bad secret. Call at the entry of
+// Require resolves the Caller from the trusted x-tenant-key, failing closed
+// with ErrAppUnauthorized when the credential is missing or malformed, or
+// the resolved config row is unknown or disabled. Call at the entry of
 // every credential-presenting surface (GenerateUploadURL / ConfirmUpload /
 // GetSTSCredential / BatchGetSTSCredential / CancelUpload).
 func (r *Resolver) Require(ctx context.Context) (*Caller, error) {
-	tenantKey, appKey, appSecret, source := appauth.Resolve(ctx)
-	switch source {
-	case dualauth.SourceTrusted:
-		return r.ensureTrusted(ctx, tenantKey)
-	case dualauth.SourceLegacy:
-		return r.verifyLegacy(appKey, appSecret)
-	default:
+	tenantKey, ok := tenantctx.TrustedKeyFromIncoming(ctx)
+	if !ok {
 		return nil, xcodes.ErrAppUnauthorized.New(
-			"missing caller credentials (x-tenant-key or x-app-key / x-app-secret metadata)")
+			"missing trusted caller credential (x-tenant-key metadata)")
 	}
+	if !tenantctx.ValidTenantKey(tenantKey) {
+		return nil, xcodes.ErrAppUnauthorized.New(fmt.Sprintf("malformed x-tenant-key %q", tenantKey))
+	}
+	return r.ensureTrusted(ctx, tenantKey)
 }
 
 // ensureTrusted resolves the tenant's config row through the snapshot; on a
@@ -125,23 +120,6 @@ func (r *Resolver) ensureTrusted(ctx context.Context, tenantKey string) (*Caller
 		r.reg.MergeApp(app)
 	}
 	return callerFromRow(tenantKey, app)
-}
-
-// verifyLegacy is the pre-③ appauth path, kept verbatim through the
-// dual-stack window: unknown/disabled app or a bad secret fails closed (the
-// registry snapshot is the read path, same as pre-③ — the cron converges
-// cross-node writes). The validated app is then converted to its mapped
-// tenant_key (empty column → app_key literal fallback; T10 总装 clears the
-// empties).
-func (r *Resolver) verifyLegacy(appKey, appSecret string) (*Caller, error) {
-	app := r.reg.App(appKey)
-	if app == nil || app.Disabled {
-		return nil, xcodes.ErrAppUnauthorized.New(fmt.Sprintf("app %q not found or disabled", appKey))
-	}
-	if app.AppSecret != appSecret {
-		return nil, xcodes.ErrAppUnauthorized.New("bad app credentials")
-	}
-	return &Caller{TenantKey: models.AppTenantKey(app), App: app}, nil
 }
 
 // callerFromRow fails closed on a disabled config row.

@@ -12,10 +12,11 @@
 //
 // Storage's admin surface splits in two under this scope:
 //
-//   - the app platform (AdminCreateApp / AdminGetApp / AdminUpdateApp /
-//     AdminRotateAppSecret / AdminListApps / AdminDeleteApp) carries the
-//     phase ③ tenant mapping and is tenant-scopable exactly like the
-//     message/telemetry app surfaces;
+//   - the tenant-config platform (AdminEnsureTenantConfig /
+//     AdminGetTenantConfig / AdminUpdateTenantConfig /
+//     AdminRotateTenantConfigSecret / AdminListTenantConfigs /
+//     AdminDeleteTenantConfig) carries the phase ③ tenant mapping and is
+//     tenant-scopable exactly like the message/telemetry config surfaces;
 //   - every other Admin* RPC (files, quotas, stats, providers, buckets,
 //     settings, owner lifecycle, audit) has NO tenant dimension — those are
 //     cross-tenant platform surfaces and admit only the PLATFORM cross-view
