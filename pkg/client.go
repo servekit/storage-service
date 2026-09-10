@@ -8,6 +8,7 @@ import (
 	storagev1 "github.com/servekit/api/gen/go/storage/v1"
 
 	"github.com/servekit/go-common/grpcx"
+	"github.com/servekit/go-common/tenantctx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -33,11 +34,17 @@ type Client struct {
 // Compile-time assertion: *Client and *Handler expose the same interface.
 var _ storagev1.StorageServiceServer = (*Client)(nil)
 
-// NewClient creates a new storage service gRPC client.
+// NewClient creates a new storage service gRPC client. ForwardActorUnary
+// and ForwardTenantKeyUnary are always installed so the request actor and
+// the trusted tenant key (the ④ gate-injected selection) cross the service
+// boundary in gRPC mode.
 func NewClient(addr string, opts ...grpc.DialOption) (*Client, error) {
 	dialOpts := append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(grpcx.ForwardActorUnary()),
+		grpc.WithChainUnaryInterceptor(
+			grpcx.ForwardActorUnary(),
+			tenantctx.ForwardTenantKeyUnary(),
+		),
 	}, opts...)
 
 	conn, err := grpc.NewClient(addr, dialOpts...)
