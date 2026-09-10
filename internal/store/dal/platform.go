@@ -6,6 +6,7 @@ package dal
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/servekit/storage-service/internal/store/generated"
 	"github.com/servekit/storage-service/internal/store/models"
@@ -272,11 +273,52 @@ func CreateApp(ctx context.Context, tx *gorm.DB, a *models.StorageApp) error {
 // pre-created it), and racing replicas must converge on one row either way.
 // The caller re-reads after the insert, so DoNothing never clobbers
 // operator edits.
+//
+// F2 hardening: a SOFT-DELETED occupant holding the tenant's unique keys
+// makes the insert silently no-op while the scoped re-read misses it — the
+// one-off INTERNAL "row absent after insert" (T11 F2 anomaly; the
+// T6-recorded soft-delete-occupant edge). Ensure semantics now demand more
+// than a suppressed insert: the occupant is looked up UNSCOPED (by
+// tenant_key, then the app_key-equal fallback mirroring GetAppForTenant)
+// and revived in place — deleted_at cleared, tenant_key re-pointed — while
+// its historic identity fields stay verbatim (key_prefix is immutable,
+// objects may live under it; the secret/name are the operator's row). A
+// LIVE occupant (a racing replica's row) is left untouched.
 func EnsureTenantApp(ctx context.Context, tx *gorm.DB, record *models.StorageApp) error {
 	if err := gorm.G[models.StorageApp](tx, clause.OnConflict{
 		DoNothing: true,
 	}).Create(ctx, record); err != nil {
 		return xcodes.ErrInternal.Wrap(err)
+	}
+
+	tk := models.TenantKeyOf(record.TenantKey)
+	var occupant models.StorageApp
+	err := tx.WithContext(ctx).Unscoped().
+		Where("tenant_key = ? OR app_key = ?", tk, record.AppKey).
+		Take(&occupant).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// No occupant on either unique key: the insert landed (the
+			// caller's re-read confirms) or the blocker is a key_prefix-only
+			// row mapped elsewhere — an operator decision, left to the
+			// caller's actionable error.
+			return nil
+		}
+		return xcodes.ErrInternal.Wrap(err)
+	}
+	if occupant.DeletedAt.Time.IsZero() && !occupant.DeletedAt.Valid {
+		return nil // live occupant: race winner or existing row — never clobbered
+	}
+	res := tx.WithContext(ctx).Unscoped().
+		Model(&models.StorageApp{}).
+		Where("id = ?", occupant.ID).
+		Updates(map[string]any{
+			"deleted_at": nil,
+			"tenant_key": tk,
+			"updated_at": time.Now(),
+		})
+	if res.Error != nil {
+		return xcodes.ErrInternal.Wrap(res.Error)
 	}
 	return nil
 }

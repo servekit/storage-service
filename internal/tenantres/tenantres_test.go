@@ -3,6 +3,7 @@ package tenantres
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/servekit/storage-service/internal/appauth"
 	"github.com/servekit/storage-service/internal/provider/storage"
@@ -136,6 +137,67 @@ func TestRequireTrustedReusesUnbackfilledRow(t *testing.T) {
 	apps, err := dal.ListApps(context.Background(), db)
 	require.NoError(t, err)
 	require.Len(t, apps, 1, "no duplicate row for an app_key-equal trusted key")
+}
+
+// TestRequireTrustedRevivesSoftDeletedOccupant pins the F2 hardening: a
+// soft-deleted config row occupying the tenant's unique keys made the lazy
+// insert silently no-op and the scoped re-read miss — surfacing as the
+// one-off INTERNAL "row absent after insert" (T11 F2 anomaly, the T6-recorded
+// soft-delete-occupant edge). Ensure semantics now revive the occupant in
+// place: un-delete, re-point tenant_key, keep the historic identity fields
+// (key_prefix immutable — objects may live under it; app_secret; name).
+func TestRequireTrustedRevivesSoftDeletedOccupant(t *testing.T) {
+	r, db, _ := setup(t)
+	const tenantKey = "ten_dead0000000"
+
+	// Occupant shape 1: a lazily-shaped row (app_key = tenant_key, mapping
+	// column set) that an operator soft-deleted via the admin surface.
+	dead := &models.StorageApp{
+		AppKey: tenantKey, AppSecret: "old-secret", Name: "old name",
+		KeyPrefix: "ten_dead0000000/", TenantKey: models.TenantKeyPtr(tenantKey),
+	}
+	require.NoError(t, db.Create(dead).Error)
+	require.NoError(t, db.Model(&models.StorageApp{}).Where("id = ?", dead.ID).
+		Update("deleted_at", time.Now()).Error)
+
+	c, err := r.Require(appauth.WithTenant(context.Background(), tenantKey))
+	require.NoError(t, err, "a soft-deleted occupant must be revived, not 500")
+	require.Equal(t, tenantKey, c.TenantKey)
+	require.Equal(t, dead.ID, c.App.ID, "the occupant row is revived in place")
+	require.Equal(t, "ten_dead0000000/", c.App.KeyPrefix, "historic prefix kept verbatim (immutability invariant)")
+	require.Equal(t, "old-secret", c.App.AppSecret, "historic secret kept (revive ≠ re-mint)")
+
+	var deletedCount int64
+	require.NoError(t, db.Unscoped().Model(&models.StorageApp{}).
+		Where("id = ? AND deleted_at IS NOT NULL", dead.ID).Count(&deletedCount).Error)
+	require.Zero(t, deletedCount, "row must be live again")
+
+	live, err := dal.ListApps(context.Background(), db)
+	require.NoError(t, err)
+	require.Len(t, live, 1, "exactly one row for the tenant")
+}
+
+// TestRequireTrustedRevivesSoftDeletedUnmappedOccupant: the same edge via
+// the app_key-equal fallback shape — a soft-deleted pre-backfill row (NULL
+// tenant_key) occupying the app_key unique index. Revive must ALSO re-point
+// the mapping column so subsequent resolution prefers tenant_key.
+func TestRequireTrustedRevivesSoftDeletedUnmappedOccupant(t *testing.T) {
+	r, db, _ := setup(t)
+	const tenantKey = "ten_unmap000000"
+
+	dead := &models.StorageApp{
+		AppKey: tenantKey, AppSecret: "s", Name: tenantKey,
+		KeyPrefix: tenantKey + "/", TenantKey: nil,
+	}
+	require.NoError(t, db.Create(dead).Error)
+	require.NoError(t, db.Model(&models.StorageApp{}).Where("id = ?", dead.ID).
+		Update("deleted_at", time.Now()).Error)
+
+	c, err := r.Require(appauth.WithTenant(context.Background(), tenantKey))
+	require.NoError(t, err)
+	require.Equal(t, dead.ID, c.App.ID)
+	require.Equal(t, tenantKey, models.TenantKeyOf(c.App.TenantKey),
+		"revive re-points the mapping column")
 }
 
 // TestRequireFailureModes: bad secret / unknown app / no credentials /
