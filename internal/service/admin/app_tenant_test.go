@@ -39,7 +39,7 @@ func TestAdminCreateApp_TenantKey(t *testing.T) {
 	require.NoError(t, err)
 	gid := &seqGID{}
 	svc := New(&Deps{DB: db, GID: gid, Registry: reg, Audit: audit.New(&audit.Deps{DB: db, GID: gid}).Recorder()})
-	ctx := context.Background()
+	ctx := platformCtx() // phase ④ T5: the admin surface requires a trusted identity
 
 	resp, err := svc.AdminCreateApp(ctx, adminCreateAppReq("mapped", "mapped/", "ten_acme00000001"))
 	require.NoError(t, err)

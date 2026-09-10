@@ -6,6 +6,8 @@ import "github.com/servekit/go-common/xerr"
 var (
 	ErrInternal                = xerr.New("INTERNAL", xerr.CategoryInternal, 500, "internal error")
 	ErrBadRequest              = xerr.New("BAD_REQUEST", xerr.CategoryBadRequest, 400, "bad request")
+	ErrUnauthorized            = xerr.New("UNAUTHORIZED", xerr.CategoryUnauthorized, 401, "management plane requires a trusted identity")
+	ErrForbidden               = xerr.New("FORBIDDEN", xerr.CategoryForbidden, 403, "operation outside caller scope")
 	ErrFileNotFound            = xerr.New("FILE_NOT_FOUND", xerr.CategoryNotFound, 404, "file not found")
 	ErrFileNotActive           = xerr.New("FILE_NOT_ACTIVE", xerr.CategoryNotFound, 404, "file not found or already deleted")
 	ErrFileBatchTooLarge       = xerr.New("FILE_BATCH_TOO_LARGE", xerr.CategoryBadRequest, 400, "file batch size too large")

@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -134,7 +133,7 @@ func TestAdminListProviders(t *testing.T) {
 	registry := newTestRegistry(t)
 	svc := New(&Deps{Registry: registry})
 
-	resp, err := svc.AdminListProviders(context.Background(), nil)
+	resp, err := svc.AdminListProviders(platformCtx(), nil)
 	require.NoError(t, err)
 	require.Len(t, resp.Providers, 2, "should list 2 providers")
 
@@ -163,7 +162,7 @@ func TestAdminListProviders_EmptyRegistry(t *testing.T) {
 	require.NoError(t, err)
 	svc := New(&Deps{Registry: registry})
 
-	resp, err := svc.AdminListProviders(context.Background(), nil)
+	resp, err := svc.AdminListProviders(platformCtx(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, resp.Providers)
 }
@@ -174,7 +173,7 @@ func TestAdminListBuckets(t *testing.T) {
 	registry := newTestRegistry(t)
 	svc := New(&Deps{Registry: registry})
 
-	resp, err := svc.AdminListBuckets(context.Background(), nil)
+	resp, err := svc.AdminListBuckets(platformCtx(), nil)
 	require.NoError(t, err)
 	require.Len(t, resp.Buckets, 3, "should list 3 buckets")
 
@@ -206,7 +205,7 @@ func TestAdminListBuckets_EmptyRegistry(t *testing.T) {
 	require.NoError(t, err)
 	svc := New(&Deps{Registry: registry})
 
-	resp, err := svc.AdminListBuckets(context.Background(), nil)
+	resp, err := svc.AdminListBuckets(platformCtx(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, resp.Buckets)
 }

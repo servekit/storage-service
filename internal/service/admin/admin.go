@@ -67,6 +67,10 @@ func New(d *Deps) *Service {
 // AdminGetQuota returns an owner's storage quota and usage (admin view). The
 // quota row is created on first reference if it does not yet exist.
 func (s *Service) AdminGetQuota(ctx context.Context, req *storagev1.AdminGetQuotaRequest) (*storagev1.QuotaInfo, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	ownerType := int32(req.GetOwnerType())
 	ownerID := req.GetOwnerId()
 
@@ -90,6 +94,10 @@ func (s *Service) AdminGetQuota(ctx context.Context, req *storagev1.AdminGetQuot
 // returns the resulting quota row. Records an audit event capturing
 // before/after state inside the same transaction.
 func (s *Service) AdminSetQuota(ctx context.Context, req *storagev1.AdminSetQuotaRequest) (*storagev1.QuotaInfo, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	ownerType := int32(req.GetOwnerType())
 	ownerID := req.GetOwnerId()
 
@@ -149,6 +157,10 @@ func (s *Service) AdminSetQuota(ctx context.Context, req *storagev1.AdminSetQuot
 // and releases the consumed quota. Returns counts; underlying objects are
 // purged later by the cleanup cron. Records an audit event.
 func (s *Service) AdminSoftDeleteOwnerFiles(ctx context.Context, req *storagev1.AdminSoftDeleteOwnerFilesRequest) (*storagev1.AdminSoftDeleteOwnerFilesResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	ownerType := int32(req.GetOwnerType())
 	ownerID := req.GetOwnerId()
 
@@ -179,6 +191,10 @@ func (s *Service) AdminSoftDeleteOwnerFiles(ctx context.Context, req *storagev1.
 // AdminDeleteOwner hard-deletes an owner's quota row and soft-deletes all
 // owned files in one transaction. Records an audit event.
 func (s *Service) AdminDeleteOwner(ctx context.Context, req *storagev1.AdminDeleteOwnerRequest) (*storagev1.AdminDeleteOwnerResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	ownerType := int32(req.GetOwnerType())
 	ownerID := req.GetOwnerId()
 
@@ -221,6 +237,10 @@ func (s *Service) AdminDeleteOwner(ctx context.Context, req *storagev1.AdminDele
 // physical/logical bytes, per-owner / per-provider / per-bucket breakdowns)
 // for admin dashboards.
 func (s *Service) AdminGetStats(ctx context.Context, req *storagev1.AdminGetStatsRequest) (*storagev1.AdminGetStatsResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	stats, err := s.getStorageStats(ctx, int32(req.GetOwnerType()), req.GetOwnerId())
 	if err != nil {
 		return nil, fmt.Errorf("get stats: %w", err)
@@ -265,6 +285,10 @@ func (s *Service) AdminGetStats(ctx context.Context, req *storagev1.AdminGetStat
 // owner, path prefix, extension, content-type prefix, vendor/bucket. Cursor
 // pagination via opaque page tokens.
 func (s *Service) AdminListFiles(ctx context.Context, req *storagev1.AdminListFilesRequest) (*storagev1.AdminListFilesResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	// The StorageObject no longer has a `provider` string column; it stores a
 	// `vendor` int32 enum. Resolve the legacy provider filter string to a
 	// Vendor enum value via the proto name map (e.g. "VENDOR_AWS_S3" -> 2).
@@ -353,6 +377,10 @@ func (s *Service) AdminListFiles(ctx context.Context, req *storagev1.AdminListFi
 // AdminGetFile returns full metadata for a single file (admin view, includes
 // provider/bucket internals from the underlying storage object).
 func (s *Service) AdminGetFile(ctx context.Context, req *storagev1.AdminGetFileRequest) (*storagev1.AdminFileInfo, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	f, err := dal.GetFileByID(ctx, s.db, req.GetFileId())
 	if err != nil {
 		return nil, xcodes.ErrFileNotFound.Wrap(err)
@@ -370,6 +398,10 @@ func (s *Service) AdminGetFile(ctx context.Context, req *storagev1.AdminGetFileR
 // refcount, and releases the consumed quota — all in one transaction. Admin
 // override that bypasses soft-delete. Records an audit event.
 func (s *Service) AdminDeleteFile(ctx context.Context, req *storagev1.AdminDeleteFileRequest) (*emptypb.Empty, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	f, err := dal.GetFileByID(ctx, s.db, req.GetFileId())
 	if err != nil {
 		return nil, xcodes.ErrFileNotFound.Wrap(err)
@@ -412,7 +444,11 @@ func (s *Service) AdminDeleteFile(ctx context.Context, req *storagev1.AdminDelet
 
 // AdminListProviders lists configured storage providers (name, vendor,
 // endpoint, region) for admin diagnostics.
-func (s *Service) AdminListProviders(_ context.Context, _ *emptypb.Empty) (*storagev1.AdminListProvidersResponse, error) {
+func (s *Service) AdminListProviders(ctx context.Context, _ *emptypb.Empty) (*storagev1.AdminListProvidersResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	entries := s.registry.AllProviders()
 
 	providers := make([]*storagev1.ProviderInfo, 0, len(entries))
@@ -437,7 +473,11 @@ func (s *Service) AdminListProviders(_ context.Context, _ *emptypb.Empty) (*stor
 
 // AdminListBuckets lists configured buckets per provider (name, key prefix,
 // ACL, vendor) for admin diagnostics.
-func (s *Service) AdminListBuckets(_ context.Context, _ *emptypb.Empty) (*storagev1.AdminListBucketsResponse, error) {
+func (s *Service) AdminListBuckets(ctx context.Context, _ *emptypb.Empty) (*storagev1.AdminListBucketsResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	entries := s.registry.AllBuckets()
 
 	buckets := make([]*storagev1.BucketInfo, 0, len(entries))

@@ -8,6 +8,7 @@ import (
 	protovalidate_middleware "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/protovalidate"
 	"github.com/servekit/go-common/grpcx"
 	"github.com/servekit/go-common/signalx"
+	"github.com/servekit/go-common/tenantctx"
 	"google.golang.org/grpc"
 
 	storagev1 "github.com/servekit/api/gen/go/storage/v1"
@@ -79,6 +80,11 @@ func NewServer(cfg *config.Config, opts ...ServerOption) (*Server, error) {
 		nil, // no HTTP gateway — gRPC-only service
 		grpcx.ErrorInterceptor,
 		grpcx.TrustedActorUnary(),
+		// Lift the trusted x-tenant-key (injected by the two doors) into the
+		// handler context — the management-plane scope input alongside the
+		// actor above (phase ④ T5). Module-mode callers already carry the
+		// ctx value; this covers the gRPC half.
+		tenantctx.TrustedTenantKeyUnary(),
 		protovalidate_middleware.UnaryServerInterceptor(validator),
 	)
 

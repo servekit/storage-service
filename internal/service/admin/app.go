@@ -26,8 +26,13 @@ import (
 // AdminCreateApp registers a calling application. app_key empty = minted
 // server-side (collision-checked). tenant_key empty = the app_key literal
 // (the phase ③ legacy→tenant mapping the migration backfill also writes);
-// unique across apps. The secret is echoed on every read of StorageAppInfo.
+// unique across apps. A scoped caller is clamped to the injected key. The
+// secret is echoed on every read of StorageAppInfo.
 func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreateAppRequest) (*storagev1.AdminCreateAppResponse, error) {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetKeyPrefix() == "" {
 		return nil, xcodes.ErrBadRequest.New("key_prefix is required")
 	}
@@ -49,12 +54,10 @@ func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreate
 		return nil, xcodes.ErrPrefixTaken.New(fmt.Sprintf("key_prefix %q already in use", req.GetKeyPrefix()))
 	}
 	// Phase ③ tenant mapping: explicit tenant_key wins; empty defaults to the
-	// app_key literal (window fallback). Duplicate mappings are rejected here
-	// so the operator gets a friendly error rather than the DB unique index.
-	tenantKey := req.GetTenantKey()
-	if tenantKey == "" {
-		tenantKey = appKey
-	}
+	// app_key literal (window fallback) — clamped to the injected key for
+	// scoped callers. Duplicate mappings are rejected here so the operator
+	// gets a friendly error rather than the DB unique index.
+	tenantKey := clampTenantKey(scope, req.GetTenantKey(), appKey)
 	if n, err := dal.CountAppsByTenantKey(ctx, s.db, tenantKey); err != nil {
 		return nil, err
 	} else if n > 0 {
@@ -92,10 +95,18 @@ func (s *Service) AdminCreateApp(ctx context.Context, req *storagev1.AdminCreate
 	return &storagev1.AdminCreateAppResponse{App: appToProto(app), AppSecret: secret}, nil
 }
 
-// AdminGetApp returns one app by app_key.
+// AdminGetApp returns one app by app_key. A scoped caller sees only the
+// app mapped to their tenant (foreign apps answer not-found).
 func (s *Service) AdminGetApp(ctx context.Context, req *storagev1.AdminGetAppRequest) (*storagev1.AdminGetAppResponse, error) {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
 	if err != nil {
+		return nil, err
+	}
+	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
 		return nil, err
 	}
 	return &storagev1.AdminGetAppResponse{App: appToProto(app)}, nil
@@ -103,10 +114,17 @@ func (s *Service) AdminGetApp(ctx context.Context, req *storagev1.AdminGetAppReq
 
 // AdminUpdateApp edits mutable fields. app_key and key_prefix are immutable
 // (objects already live under the prefix); bucket rebinding only affects
-// new uploads.
+// new uploads. Ownership-checked against the caller's scope.
 func (s *Service) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdateAppRequest) (*storagev1.AdminUpdateAppResponse, error) {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
 	if err != nil {
+		return nil, err
+	}
+	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
 		return nil, err
 	}
 	before := appSnapshot(app)
@@ -133,11 +151,19 @@ func (s *Service) AdminUpdateApp(ctx context.Context, req *storagev1.AdminUpdate
 	return &storagev1.AdminUpdateAppResponse{App: appToProto(app)}, nil
 }
 
-// AdminRotateAppSecret mints a new secret; the old one stops working on the
-// next registry refresh (immediate here).
+// AdminRotateAppSecret mints a new secret; the old one stops working on
+// the next registry refresh (immediate here). Ownership-checked against
+// the caller's scope.
 func (s *Service) AdminRotateAppSecret(ctx context.Context, req *storagev1.AdminRotateAppSecretRequest) (*storagev1.AdminRotateAppSecretResponse, error) {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
 	if err != nil {
+		return nil, err
+	}
+	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
 		return nil, err
 	}
 	secret, err := mintAppSecret()
@@ -154,14 +180,23 @@ func (s *Service) AdminRotateAppSecret(ctx context.Context, req *storagev1.Admin
 	return &storagev1.AdminRotateAppSecretResponse{App: appToProto(app), AppSecret: secret}, nil
 }
 
-// AdminListApps lists all live apps (low cardinality, no paging).
+// AdminListApps lists the live apps in the caller's scope: for an
+// injected key only the app row mapped to that tenant; the cross-view the
+// whole registry (low cardinality, no paging).
 func (s *Service) AdminListApps(ctx context.Context, _ *storagev1.AdminListAppsRequest) (*storagev1.AdminListAppsResponse, error) {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	apps, err := dal.ListApps(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*storagev1.StorageAppInfo, 0, len(apps))
 	for _, a := range apps {
+		if !visibleInTenant(scope, a) {
+			continue
+		}
 		out = append(out, appToProto(a))
 	}
 	return &storagev1.AdminListAppsResponse{Apps: out}, nil
@@ -169,10 +204,18 @@ func (s *Service) AdminListApps(ctx context.Context, _ *storagev1.AdminListAppsR
 
 // AdminDeleteApp soft-deletes the app. Data-plane calls fail on the next
 // registry refresh (immediate here); existing objects/files stay readable —
-// their keys are stored on the rows.
+// their keys are stored on the rows. Ownership-checked against the
+// caller's scope.
 func (s *Service) AdminDeleteApp(ctx context.Context, req *storagev1.AdminDeleteAppRequest) (*emptypb.Empty, error) {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	app, err := dal.GetAppByKey(ctx, s.db, req.GetAppKey())
 	if err != nil {
+		return nil, err
+	}
+	if err := authorizeAppTenant(scope, app, xcodes.ErrAppNotFound.New(fmt.Sprintf("no app with app_key %q", req.GetAppKey()))); err != nil {
 		return nil, err
 	}
 	if err := dal.DeleteApp(ctx, s.db, app.ID); err != nil {

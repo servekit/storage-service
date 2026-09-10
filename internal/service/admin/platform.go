@@ -33,6 +33,10 @@ func (s *Service) refreshPlatform(ctx context.Context) {
 
 // AdminCreateProvider adds a provider to the live registry.
 func (s *Service) AdminCreateProvider(ctx context.Context, req *storagev1.AdminCreateProviderRequest) (*storagev1.AdminCreateProviderResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	if _, err := dal.GetProviderByName(ctx, s.db, req.GetName()); err == nil {
 		return nil, xcodes.ErrBadRequest.New(fmt.Sprintf("provider %q already exists", req.GetName()))
 	}
@@ -66,6 +70,10 @@ func (s *Service) AdminCreateProvider(ctx context.Context, req *storagev1.AdminC
 // AdminUpdateProvider edits a provider; credential fields are
 // replace-on-present, absent optional fields keep their values.
 func (s *Service) AdminUpdateProvider(ctx context.Context, req *storagev1.AdminUpdateProviderRequest) (*storagev1.AdminUpdateProviderResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	p, err := dal.GetProviderByName(ctx, s.db, req.GetName())
 	if err != nil {
 		return nil, err
@@ -105,6 +113,10 @@ func (s *Service) AdminUpdateProvider(ctx context.Context, req *storagev1.AdminU
 // AdminDeleteProvider removes a provider; rejected while buckets are still
 // bound to it.
 func (s *Service) AdminDeleteProvider(ctx context.Context, req *storagev1.AdminDeleteProviderRequest) (*emptypb.Empty, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	p, err := dal.GetProviderByName(ctx, s.db, req.GetName())
 	if err != nil {
 		return nil, err
@@ -132,6 +144,10 @@ func (s *Service) AdminDeleteProvider(ctx context.Context, req *storagev1.AdminD
 // Re-binding a bucket that still has objects to a different provider is
 // rejected — object rows carry (vendor, bucket) and would dangle.
 func (s *Service) AdminUpsertBucket(ctx context.Context, req *storagev1.AdminUpsertBucketRequest) (*storagev1.AdminUpsertBucketResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	provider, err := dal.GetProviderByName(ctx, s.db, req.GetProvider())
 	if err != nil {
 		return nil, err
@@ -200,6 +216,10 @@ func (s *Service) AdminUpsertBucket(ctx context.Context, req *storagev1.AdminUps
 // AdminDeleteBucket removes a bucket binding; rejected while the bucket
 // still has objects.
 func (s *Service) AdminDeleteBucket(ctx context.Context, req *storagev1.AdminDeleteBucketRequest) (*emptypb.Empty, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	b, err := dal.GetBucket(ctx, s.db, req.GetName())
 	if err != nil {
 		return nil, err
@@ -231,6 +251,10 @@ func (s *Service) AdminDeleteBucket(ctx context.Context, req *storagev1.AdminDel
 
 // AdminGetSettings returns the runtime settings row.
 func (s *Service) AdminGetSettings(ctx context.Context, _ *storagev1.AdminGetSettingsRequest) (*storagev1.AdminGetSettingsResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	settings, err := dal.GetSettings(ctx, s.db)
 	if err != nil {
 		return nil, err
@@ -241,6 +265,10 @@ func (s *Service) AdminGetSettings(ctx context.Context, _ *storagev1.AdminGetSet
 // AdminUpdateSettings updates default/public bucket names; referenced
 // buckets must exist.
 func (s *Service) AdminUpdateSettings(ctx context.Context, req *storagev1.AdminUpdateSettingsRequest) (*storagev1.AdminUpdateSettingsResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	settings, err := dal.GetSettings(ctx, s.db)
 	if err != nil {
 		return nil, err

@@ -74,6 +74,10 @@ func (s *Service) ListMyAuditLogs(ctx context.Context, req *storagev1.ListMyAudi
 // AdminListAuditLogs returns audit log entries across all owners (admin
 // view) with full filter set and cursor pagination.
 func (s *Service) AdminListAuditLogs(ctx context.Context, req *storagev1.AdminListAuditLogsRequest) (*storagev1.AdminListAuditLogsResponse, error) {
+	if err := requirePlatformScope(ctx); err != nil {
+		return nil, err
+	}
+
 	filter := dal.AuditLogFilter{
 		OwnerType: int32(req.GetOwnerType()),
 		OwnerID:   req.GetOwnerId(),
