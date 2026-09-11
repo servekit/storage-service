@@ -2,8 +2,13 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 
 	"github.com/servekit/go-common/dbx"
 
@@ -21,6 +26,39 @@ func TestMigrate_Idempotent(t *testing.T) {
 	require.NoError(t, Migrate(db))
 	require.NoError(t, Migrate(db),
 		"re-running migrate on a clean DB must not error")
+}
+
+// TestMigrate_TablePrefixAware (T7 unified postMigrate fix): a database
+// opened with a dbx TablePrefix must converge identically to a bare one —
+// the post-migrate raw SQL resolves physical table names through the
+// naming strategy. Pre-fix, every backfill and reconcile hit "relation
+// does not exist" on a prefixed database.
+func TestMigrate_TablePrefixAware(t *testing.T) {
+	base := dbx.SetupTestDB(t, dbx.DriverPostgres)
+	sqlDB, err := base.DB()
+	require.NoError(t, err)
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true,
+		NamingStrategy:                           &schema.NamingStrategy{TablePrefix: "svc_"},
+	})
+	require.NoError(t, err)
+
+	// A pre-③ apps row so the backfill has something to converge; Migrate
+	// creates the prefixed tables itself.
+	require.NoError(t, Migrate(db), "migrate must converge a prefixed database")
+	require.NoError(t, db.Exec(fmt.Sprintf(
+		`INSERT INTO %s (id, app_key, app_secret, name, key_prefix, created_at, updated_at) VALUES (1, 'legacyapp', 's', 'legacy', 'legacy/', now(), now())`,
+		tableName(db, "storage_apps"))).Error)
+	require.NoError(t, db.Exec(fmt.Sprintf(
+		`UPDATE %s SET tenant_key = NULL`, tableName(db, "storage_apps"))).Error)
+
+	require.NoError(t, Migrate(db), "backfill run on the prefixed database")
+
+	var key *string
+	require.NoError(t, db.Raw(fmt.Sprintf(
+		`SELECT tenant_key FROM %s WHERE app_key = 'legacyapp'`, tableName(db, "storage_apps"))).Scan(&key).Error)
+	require.NotNil(t, key, "backfill must fill tenant_key on the prefixed table")
+	require.Equal(t, "legacyapp", *key)
 }
 
 // TestMigrate_Phase3TenantKeyBackfill: pre-③ rows (tenant_key NULL) are
