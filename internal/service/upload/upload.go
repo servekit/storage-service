@@ -189,14 +189,13 @@ func New(d *Deps) *Service {
 	}
 }
 
-// authenticate resolves the calling identity per the phase ③ dual-stack rule
-// (D-③1, tenantres.Require): trusted x-tenant-key is authoritative (legacy
-// credentials riding the same metadata are discarded; a first-sight tenant
-// lazily gets its config row with key_prefix "{tenant_key}/"), the legacy
-// ak/sk path keeps its verification and converts the app to its mapped
-// tenant_key, and missing credentials fail closed. Runs in the service layer
-// (not an interceptor) so module-mode in-process callers share the exact
-// same path.
+// authenticate resolves the calling identity (tenantres.Require): the
+// format-validated trusted x-tenant-key — legacy credentials riding the
+// same metadata are discarded, the deleted legacy ak/sk path answers
+// Unauthenticated, and a first-sight tenant lazily gets its config row
+// with key_prefix "{tenant_key}/". Runs in the service layer (not an
+// interceptor) so module-mode in-process callers share the exact same
+// path.
 func (s *Service) authenticate(ctx context.Context) (*tenantres.Caller, error) {
 	return s.tenants.Require(ctx)
 }

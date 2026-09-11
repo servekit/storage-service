@@ -71,9 +71,9 @@ type StorageApp struct {
 	// objects already live under it); tenants first seen on the trusted path
 	// are lazily created with "{tenant_key}/".
 	KeyPrefix string `gorm:"column:key_prefix;size:64;uniqueIndex;not null"`
-	// TenantKey maps the app to its tenant (phase ③ dual-stack window).
-	// Nullable transition: NULL = not yet backfilled; the data plane falls
-	// back to the app_key literal (T10 总装 clears the empties). Unique —
+	// TenantKey maps the app to its tenant. Nullable transition: NULL = not
+	// yet backfilled; the data plane falls back to the app_key literal (T10
+	// 总装 clears the empties). Unique —
 	// one config row per tenant.
 	TenantKey *string `gorm:"size:16;column:tenant_key;uniqueIndex:uniq_storage_apps_tenant_key"`
 	// BucketID selects the app's private bucket; 0 = the default bucket.
