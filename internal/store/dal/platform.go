@@ -426,18 +426,6 @@ func UpdateApp(ctx context.Context, tx *gorm.DB, a *models.StorageApp) error {
 	return nil
 }
 
-// UpdateAppSecret replaces the app secret (rotation).
-func UpdateAppSecret(ctx context.Context, tx *gorm.DB, id int64, secret string) error {
-	_, err := gorm.G[models.StorageApp](tx).
-		Where(generated.StorageApp.ID.Eq(id)).
-		Set(generated.StorageApp.AppSecret.Set(secret)).
-		Update(ctx)
-	if err != nil {
-		return xcodes.ErrInternal.Wrap(err)
-	}
-	return nil
-}
-
 // DeleteApp soft-deletes the app. Data-plane calls fail immediately via the
 // registry snapshot; existing objects/files stay readable.
 func DeleteApp(ctx context.Context, tx *gorm.DB, id int64) error {

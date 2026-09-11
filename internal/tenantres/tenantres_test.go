@@ -44,7 +44,7 @@ func setup(t *testing.T) (*Resolver, *gorm.DB, *storage.Registry) {
 func seedApp(t *testing.T, db *gorm.DB, reg *storage.Registry, id int64, appKey, secret, keyPrefix string, tenantKey *string) {
 	t.Helper()
 	app := &models.StorageApp{
-		ID: id, AppKey: appKey, AppSecret: secret, Name: appKey,
+		ID: id, AppKey: appKey, Name: appKey,
 		KeyPrefix: keyPrefix, TenantKey: tenantKey,
 	}
 	require.NoError(t, dal.CreateApp(context.Background(), db, app))
@@ -67,8 +67,6 @@ func TestRequireTrustedLazilyCreatesConfigRowWithDerivedPrefix(t *testing.T) {
 	assert.Equal(t, "ten_abc123def456", c1.App.AppKey)
 	assert.Equal(t, "ten_abc123def456", models.TenantKeyOf(c1.App.TenantKey))
 	assert.Equal(t, "ten_abc123def456/", c1.App.KeyPrefix, "new tenant derives key_prefix = {tenant_key}/")
-	assert.NotEmpty(t, c1.App.AppSecret, "minted secret satisfies the not-null column")
-	assert.NotEqual(t, "ten_abc123def456", c1.App.AppSecret, "the minted secret must not be guessable")
 	assert.Zero(t, c1.App.BucketID, "lazy config row binds the default bucket")
 	assert.False(t, c1.App.Disabled)
 
@@ -192,7 +190,7 @@ func TestRequireTrustedRevivesSoftDeletedOccupant(t *testing.T) {
 	// Occupant shape 1: a lazily-shaped row (app_key = tenant_key, mapping
 	// column set) that an operator soft-deleted via the admin surface.
 	dead := &models.StorageApp{
-		AppKey: tenantKey, AppSecret: "old-secret", Name: "old name",
+		AppKey: tenantKey, Name: "old name",
 		KeyPrefix: "ten_dead0000000/", TenantKey: models.TenantKeyPtr(tenantKey),
 	}
 	require.NoError(t, db.Create(dead).Error)
@@ -204,7 +202,7 @@ func TestRequireTrustedRevivesSoftDeletedOccupant(t *testing.T) {
 	require.Equal(t, tenantKey, c.TenantKey)
 	require.Equal(t, dead.ID, c.App.ID, "the occupant row is revived in place")
 	require.Equal(t, "ten_dead0000000/", c.App.KeyPrefix, "historic prefix kept verbatim (immutability invariant)")
-	require.Equal(t, "old-secret", c.App.AppSecret, "historic secret kept (revive ≠ re-mint)")
+	require.Equal(t, "old name", c.App.Name, "historic name kept (revive ≠ re-create)")
 
 	var deletedCount int64
 	require.NoError(t, db.Unscoped().Model(&models.StorageApp{}).
@@ -225,7 +223,7 @@ func TestRequireTrustedRevivesSoftDeletedUnmappedOccupant(t *testing.T) {
 	const tenantKey = "ten_unmapped0000"
 
 	dead := &models.StorageApp{
-		AppKey: tenantKey, AppSecret: "s", Name: tenantKey,
+		AppKey: tenantKey, Name: tenantKey,
 		KeyPrefix: tenantKey + "/", TenantKey: nil,
 	}
 	require.NoError(t, db.Create(dead).Error)
@@ -250,12 +248,12 @@ func TestRequireTrustedLiveOccupantPreferredOverDead(t *testing.T) {
 	const tenantKey = "ten_live00000000"
 
 	live := &models.StorageApp{
-		AppKey: tenantKey, AppSecret: "live-secret", Name: "live",
+		AppKey: tenantKey, Name: "live",
 		KeyPrefix: tenantKey + "/", TenantKey: nil,
 	}
 	require.NoError(t, db.Create(live).Error)
 	dead := &models.StorageApp{
-		AppKey: "sto_oldalias2", AppSecret: "old-secret", Name: "dead",
+		AppKey: "sto_oldalias2", Name: "dead",
 		KeyPrefix: "old/", TenantKey: models.TenantKeyPtr(tenantKey),
 	}
 	require.NoError(t, db.Create(dead).Error)
@@ -265,7 +263,7 @@ func TestRequireTrustedLiveOccupantPreferredOverDead(t *testing.T) {
 	c, err := r.Require(tenantctx.WithTenant(context.Background(), tenantKey))
 	require.NoError(t, err)
 	require.Equal(t, live.ID, c.App.ID, "the LIVE occupant must win the unscoped lookup")
-	require.Equal(t, "live-secret", c.App.AppSecret)
+	require.Equal(t, "live", c.App.Name)
 
 	var still int64
 	require.NoError(t, db.Unscoped().Model(&models.StorageApp{}).

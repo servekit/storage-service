@@ -153,7 +153,7 @@ func newTestRegistry(t *testing.T) *storage.Registry {
 // in this suite hold unchanged.
 func testApp() *models.StorageApp {
 	return &models.StorageApp{
-		ID: 1, AppKey: "test-app", AppSecret: "test-secret",
+		ID: 1, AppKey: "test-app",
 		KeyPrefix: "uploads/", Name: "test app",
 	}
 }

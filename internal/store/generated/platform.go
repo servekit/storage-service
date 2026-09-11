@@ -63,7 +63,6 @@ var StorageBucket = struct {
 var StorageApp = struct {
 	ID        field.Number[int64]
 	AppKey    field.String
-	AppSecret field.String
 	Name      field.String
 	KeyPrefix field.String
 	TenantKey field.String
@@ -75,7 +74,6 @@ var StorageApp = struct {
 }{
 	ID:        field.Number[int64]{}.WithColumn("id"),
 	AppKey:    field.String{}.WithColumn("app_key"),
-	AppSecret: field.String{}.WithColumn("app_secret"),
 	Name:      field.String{}.WithColumn("name"),
 	KeyPrefix: field.String{}.WithColumn("key_prefix"),
 	TenantKey: field.String{}.WithColumn("tenant_key"),

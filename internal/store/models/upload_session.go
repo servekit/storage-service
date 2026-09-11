@@ -23,13 +23,13 @@ type StorageUploadSession struct {
 	OwnerID   int64  `gorm:"column:owner_id;not null;index:idx_upload_sessions_owner;index:idx_upload_sessions_pending_dedup,priority:2" json:"owner_id"`
 	Bucket    string `gorm:"column:bucket;type:varchar(128);not null" json:"bucket"`
 	ObjectKey string `gorm:"column:object_key;type:varchar(512);not null" json:"object_key"`
-	// AppKey identifies the calling app that issued the session; KeyPrefix is
-	// that app's namespace snapshot at issue time. ConfirmUpload derives the
-	// final content-addressed key from KeyPrefix, keeping confirm
-	// self-contained even if the app is deleted or re-bound mid-flight.
-	// TenantKey snapshots the issuing caller's tenant (phase ③ write-path
-	// switch; NULL on pre-③ rows until the migration backfill heals them).
-	AppKey      string  `gorm:"column:app_key;type:varchar(64);not null;default:''" json:"app_key"`
+	// KeyPrefix is the issuing app's namespace snapshot at issue time.
+	// ConfirmUpload derives the final content-addressed key from KeyPrefix,
+	// keeping confirm self-contained even if the app is deleted or re-bound
+	// mid-flight. TenantKey snapshots the issuing caller's tenant (phase ③
+	// write-path switch; the legacy app_key column was dropped with the ④
+	// window close; NULL on pre-③ rows until the migration backfill heals
+	// them).
 	KeyPrefix   string  `gorm:"column:key_prefix;type:varchar(64);not null;default:''" json:"key_prefix"`
 	TenantKey   *string `gorm:"column:tenant_key;type:varchar(16)" json:"tenant_key,omitempty"`
 	MD5         string  `gorm:"column:md5;type:varchar(32);not null;index:idx_upload_sessions_pending_dedup,priority:3" json:"md5"`

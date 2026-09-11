@@ -443,10 +443,12 @@ func validateBucketCDN(i, j int, cdn *CDNConfig, vendor string) error {
 	return nil
 }
 
-// BootstrapAppConfig describes the migrate-time bootstrap app.
+// BootstrapAppConfig describes the migrate-time bootstrap app. AppSecret
+// is accepted for backward config compatibility and ignored (the credential
+// column was retired with the ④ window close).
 type BootstrapAppConfig struct {
 	AppKey    string
-	AppSecret string
+	AppSecret string // ignored since the ④ window close
 	Name      string
 	// KeyPrefix is only applied at creation; existing apps keep theirs.
 	KeyPrefix string

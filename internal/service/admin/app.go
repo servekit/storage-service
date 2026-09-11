@@ -1,16 +1,15 @@
 // Tenant-config admin RPCs for the storage platform (phase ④ T6 rename of
 // the apps surface): one config row per tenant; the row keeps its internal
 // calling-application identity — app_key/key_prefix are immutable, the
-// secret is minted server-side and echoed on every read (internal-trust
-// posture; the ops console is the intended reader), deletion is soft and
-// takes effect on the next registry refresh (which runs immediately after
-// each mutation below).
+// credential column was retired with the ④ window close (spec §9.1.3; the
+// data plane authenticates via the trusted x-tenant-key), deletion is soft
+// and takes effect on the next registry refresh (which runs immediately
+// after each mutation below).
 package admin
 
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -33,8 +32,7 @@ import (
 // minted server-side ("sto_" + 8 base36, collision-checked) and
 // tenant_key empty-on-the-cross-view defaulting to the minted literal
 // (the phase ③ legacy→tenant fallback). A scoped caller is clamped to the
-// injected key, so their ensure is the read-back of their own row. The
-// secret is echoed on every read of StorageTenantConfigInfo.
+// injected key, so their ensure is the read-back of their own row.
 func (s *Service) AdminEnsureTenantConfig(ctx context.Context, req *storagev1.AdminEnsureTenantConfigRequest) (*storagev1.AdminEnsureTenantConfigResponse, error) {
 	scope, err := scopeFromCtx(ctx)
 	if err != nil {
@@ -50,7 +48,7 @@ func (s *Service) AdminEnsureTenantConfig(ctx context.Context, req *storagev1.Ad
 		if existing, err := dal.GetAppForTenant(ctx, s.db, targetTenant); err != nil {
 			return nil, err
 		} else if existing != nil {
-			return &storagev1.AdminEnsureTenantConfigResponse{Config: appToProto(existing), AppSecret: existing.AppSecret}, nil
+			return &storagev1.AdminEnsureTenantConfigResponse{Config: appToProto(existing)}, nil
 		}
 	}
 	if req.GetKeyPrefix() == "" {
@@ -80,10 +78,6 @@ func (s *Service) AdminEnsureTenantConfig(ctx context.Context, req *storagev1.Ad
 		}
 	}
 
-	secret, err := mintAppSecret()
-	if err != nil {
-		return nil, xcodes.ErrInternal.Wrap(err)
-	}
 	id, err := gidservice.NextID(ctx, s.gid)
 	if err != nil {
 		return nil, xcodes.ErrInternal.Wrapf(err, "generate app id")
@@ -91,7 +85,6 @@ func (s *Service) AdminEnsureTenantConfig(ctx context.Context, req *storagev1.Ad
 	app := &models.StorageApp{
 		ID:        id,
 		AppKey:    appKey,
-		AppSecret: secret,
 		Name:      req.GetName(),
 		KeyPrefix: req.GetKeyPrefix(),
 		TenantKey: models.TenantKeyPtr(tenantKey),
@@ -103,7 +96,7 @@ func (s *Service) AdminEnsureTenantConfig(ctx context.Context, req *storagev1.Ad
 	s.auditPlatform(ctx, storagev1.AuditAction_AUDIT_ACTION_ADMIN_CREATE_APP,
 		storagev1.AuditLogTargetType_AUDIT_LOG_TARGET_TYPE_APP, app.ID, nil, appSnapshot(app))
 	s.refreshPlatform(ctx)
-	return &storagev1.AdminEnsureTenantConfigResponse{Config: appToProto(app), AppSecret: secret}, nil
+	return &storagev1.AdminEnsureTenantConfigResponse{Config: appToProto(app)}, nil
 }
 
 // AdminGetTenantConfig returns the tenant's config row (tenant_key
@@ -151,26 +144,17 @@ func (s *Service) AdminUpdateTenantConfig(ctx context.Context, req *storagev1.Ad
 	return &storagev1.AdminUpdateTenantConfigResponse{Config: appToProto(app)}, nil
 }
 
-// AdminRotateTenantConfigSecret mints a new secret; the old one stops
-// working on the next registry refresh (immediate here). Ownership-checked
-// against the caller's scope.
+// AdminRotateTenantConfigSecret is retired: the app_secret column was
+// dropped when the ④ window closed (spec §9.1.3) — config rows carry no
+// credential to rotate. Ownership-checked against the caller's scope before
+// refusing, so a foreign row still answers not-found.
 func (s *Service) AdminRotateTenantConfigSecret(ctx context.Context, req *storagev1.AdminRotateTenantConfigSecretRequest) (*storagev1.AdminRotateTenantConfigSecretResponse, error) {
 	app, err := s.configForTenantScoped(ctx, req.GetTenantKey())
 	if err != nil {
 		return nil, err
 	}
-	secret, err := mintAppSecret()
-	if err != nil {
-		return nil, xcodes.ErrInternal.Wrap(err)
-	}
-	if err := dal.UpdateAppSecret(ctx, s.db, app.ID, secret); err != nil {
-		return nil, err
-	}
-	app.AppSecret = secret
-	s.auditPlatform(ctx, storagev1.AuditAction_AUDIT_ACTION_ADMIN_ROTATE_APP_SECRET,
-		storagev1.AuditLogTargetType_AUDIT_LOG_TARGET_TYPE_APP, app.ID, nil, appSnapshot(app))
-	s.refreshPlatform(ctx)
-	return &storagev1.AdminRotateTenantConfigSecretResponse{Config: appToProto(app), AppSecret: secret}, nil
+	_ = app
+	return nil, xcodes.ErrSecretRetired.New("app_secret was retired with the ④ window close; the data plane authenticates via the trusted x-tenant-key")
 }
 
 // AdminListTenantConfigs lists the live config rows in the caller's scope:
@@ -249,7 +233,6 @@ func appToProto(a *models.StorageApp) *storagev1.StorageTenantConfigInfo {
 		Disabled:  a.Disabled,
 		CreatedAt: a.CreatedAt.Unix(),
 		UpdatedAt: a.UpdatedAt.Unix(),
-		AppSecret: a.AppSecret,
 		TenantKey: models.TenantKeyOf(a.TenantKey),
 	}
 }
@@ -290,13 +273,4 @@ func mintAppKey() string {
 		out[i] = base36[int(b)%36]
 	}
 	return "sto_" + string(out)
-}
-
-// mintAppSecret mints "sto_" + 32 random bytes (base64url).
-func mintAppSecret() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("mint app secret: %w", err)
-	}
-	return "sto_" + base64.RawURLEncoding.EncodeToString(buf), nil
 }

@@ -114,7 +114,6 @@ var StorageFile = struct {
 	OwnerType   field.Number[int32]
 	OwnerID     field.Number[int64]
 	ObjectID    field.Number[int64]
-	AppKey      field.String
 	TenantKey   field.String
 	Filename    field.String
 	FilePath    field.String
@@ -132,7 +131,6 @@ var StorageFile = struct {
 	OwnerType:   field.Number[int32]{}.WithColumn("owner_type"),
 	OwnerID:     field.Number[int64]{}.WithColumn("owner_id"),
 	ObjectID:    field.Number[int64]{}.WithColumn("object_id"),
-	AppKey:      field.String{}.WithColumn("app_key"),
 	TenantKey:   field.String{}.WithColumn("tenant_key"),
 	Filename:    field.String{}.WithColumn("filename"),
 	FilePath:    field.String{}.WithColumn("file_path"),

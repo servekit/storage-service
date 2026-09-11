@@ -29,15 +29,15 @@ func TestReapExpiredSessions_SettledStagingCleanup(t *testing.T) {
 
 	confirmedSess := &models.StorageUploadSession{
 		ID: 9101, OwnerType: 1, OwnerID: 100, Bucket: "uploads", ObjectKey: stagingConfirmed,
-		AppKey: "test-app", KeyPrefix: "uploads/",
-		MD5: victimMD5, Size: 4, Filename: "a.bin", ContentType: "text/plain", Vendor: 3,
+		KeyPrefix: "uploads/",
+		MD5:       victimMD5, Size: 4, Filename: "a.bin", ContentType: "text/plain", Vendor: 3,
 		Status:    int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_CONFIRMED),
 		ExpiresAt: time.Now().Add(-time.Minute),
 	}
 	cancelledSess := &models.StorageUploadSession{
 		ID: 9102, OwnerType: 1, OwnerID: 200, Bucket: "uploads", ObjectKey: stagingCancelled,
-		AppKey: "test-app", KeyPrefix: "uploads/",
-		MD5: victimMD5, Size: 4, Filename: "b.bin", ContentType: "text/plain", Vendor: 3,
+		KeyPrefix: "uploads/",
+		MD5:       victimMD5, Size: 4, Filename: "b.bin", ContentType: "text/plain", Vendor: 3,
 		Status:    int32(storagev1.UploadSessionStatus_UPLOAD_SESSION_STATUS_CANCELLED),
 		ExpiresAt: time.Now().Add(-time.Minute),
 	}

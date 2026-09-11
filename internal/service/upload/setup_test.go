@@ -121,7 +121,7 @@ func setupUploadServiceWithFakeProvider(t *testing.T, host Host) (*Service, *fak
 // since the ④ window close).
 func testApp() *models.StorageApp {
 	return &models.StorageApp{
-		ID: 1, AppKey: TestTenantKey, AppSecret: "test-secret",
+		ID: 1, AppKey: TestTenantKey,
 		KeyPrefix: "uploads/", Name: "test app",
 		TenantKey: models.TenantKeyPtr(TestTenantKey),
 	}

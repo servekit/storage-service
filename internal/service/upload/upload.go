@@ -370,8 +370,11 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 	if session.OwnerID != token.OwnerID || session.OwnerType != token.OwnerType || session.MD5 != token.MD5 || session.Size != token.Size {
 		return nil, xcodes.ErrUploadTokenInvalid.New("session/token mismatch")
 	}
-	if session.AppKey != "" && session.AppKey != token.AppKey {
-		return nil, xcodes.ErrUploadTokenInvalid.New("session/token app mismatch")
+	// Session/token binding: the session's issue-time tenant must not name a
+	// DIFFERENT tenant than the confirming caller's (pre-③ sessions carry
+	// NULL and are healed by the caller's tenant, matching the file stamp).
+	if sessionTenant := models.TenantKeyOf(session.TenantKey); sessionTenant != "" && sessionTenant != caller.TenantKey {
+		return nil, xcodes.ErrUploadTokenInvalid.New("session/token tenant mismatch")
 	}
 
 	// Idempotent: session already confirmed in a previous ConfirmUpload call.
@@ -530,7 +533,6 @@ func (s *Service) ConfirmUpload(ctx context.Context, req *storagev1.ConfirmUploa
 			OwnerType:   ownerType,
 			OwnerID:     ownerID,
 			ObjectID:    createdObj.ID,
-			AppKey:      session.AppKey,
 			TenantKey:   sessionTenantKey(session, caller),
 			Filename:    session.Filename,
 			FilePath:    session.FilePath,
@@ -960,7 +962,6 @@ func (s *Service) findOrCreateSession(ctx context.Context, caller *tenantres.Cal
 		OwnerID:     ownerID,
 		Bucket:      bucket,
 		ObjectKey:   objectKey,
-		AppKey:      caller.App.AppKey,
 		KeyPrefix:   caller.App.KeyPrefix,
 		TenantKey:   models.TenantKeyPtr(caller.TenantKey),
 		MD5:         file.md5,
@@ -1016,7 +1017,6 @@ func (s *Service) handleInstantUpload(ctx context.Context, caller *tenantres.Cal
 			OwnerType:   ownerType,
 			OwnerID:     ownerID,
 			ObjectID:    existing.ID,
-			AppKey:      caller.App.AppKey,
 			TenantKey:   models.TenantKeyPtr(caller.TenantKey),
 			Filename:    filename,
 			FilePath:    filePath,

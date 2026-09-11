@@ -56,16 +56,15 @@ type StorageBucket struct {
 	DeletedAt    gorm.DeletedAt `gorm:"index"`
 }
 
-// StorageApp is one calling application of the storage platform. Data-plane
-// RPCs authenticate with (app_key, app_secret) metadata; every object the app
+// StorageApp is one tenant's config row of the storage platform. Data-plane
+// RPCs authenticate via the trusted x-tenant-key (the credential column was
+// retired with the ④ window close, spec §9.1.3); every object the tenant
 // writes lives under its globally-unique key_prefix, which is also the
-// dedup domain. Mirrors message-service's MessageApp pattern (secret stored
-// PLAINTEXT — internal-trust posture).
+// dedup domain.
 type StorageApp struct {
-	ID        int64  `gorm:"primaryKey"`
-	AppKey    string `gorm:"column:app_key;size:64;uniqueIndex;not null"`
-	AppSecret string `gorm:"column:app_secret;size:128;not null"`
-	Name      string `gorm:"size:200;not null"`
+	ID     int64  `gorm:"primaryKey"`
+	AppKey string `gorm:"column:app_key;size:64;uniqueIndex;not null"`
+	Name   string `gorm:"size:200;not null"`
 	// KeyPrefix namespaces every object the app writes; immutable, ends '/'.
 	// Phase ③: EXISTING apps keep their prefix verbatim (never recomputed —
 	// objects already live under it); tenants first seen on the trusted path

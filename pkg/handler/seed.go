@@ -116,14 +116,14 @@ func SeedFromConfig(db *gorm.DB, cfg *config.Config) error {
 
 // seedBootstrapApp upserts the deployment's own calling app (e.g. testkit).
 // Creation applies the configured key_prefix (must end with '/'); re-runs
-// update secret/name/bucket only — the prefix is immutable once objects
-// live under it.
+// update name/bucket only — the prefix is immutable once objects live under
+// it, and the credential column is gone (④ window close; a configured
+// bootstrap app_secret is ignored).
 func seedBootstrapApp(db *gorm.DB, ba *config.BootstrapAppConfig) error {
 	var existing models.StorageApp
 	err := db.Where("app_key = ?", ba.AppKey).Take(&existing).Error
 	switch {
 	case err == nil:
-		existing.AppSecret = ba.AppSecret
 		existing.Name = ba.Name
 		existing.BucketID = ba.BucketID
 		if existing.Name == "" {
@@ -138,7 +138,7 @@ func seedBootstrapApp(db *gorm.DB, ba *config.BootstrapAppConfig) error {
 			return xcodes.ErrBadRequest.New("bootstrap_app.key_prefix is required on first run (must end with '/')")
 		}
 		row := &models.StorageApp{
-			ID: seedNextID(db), AppKey: ba.AppKey, AppSecret: ba.AppSecret,
+			ID: seedNextID(db), AppKey: ba.AppKey,
 			Name: ba.Name, KeyPrefix: ba.KeyPrefix, BucketID: ba.BucketID,
 			// Phase ③ mapping: the bootstrap app maps to its app_key literal
 			// (same value the migration backfill writes for existing rows).

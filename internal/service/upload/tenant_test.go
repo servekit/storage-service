@@ -52,7 +52,6 @@ func TestGenerateUploadURL_TrustedNewTenantDerivesPrefix(t *testing.T) {
 
 	var sess models.StorageUploadSession
 	require.NoError(t, db.Where("owner_id = ?", 400).First(&sess).Error)
-	assert.Equal(t, tenant, sess.AppKey)
 	assert.Equal(t, tenant+"/", sess.KeyPrefix, "session snapshots the derived prefix")
 	assert.Equal(t, tenant, models.TenantKeyOf(sess.TenantKey), "session snapshots the tenant (write-path switch)")
 
@@ -61,7 +60,6 @@ func TestGenerateUploadURL_TrustedNewTenantDerivesPrefix(t *testing.T) {
 		"first-sight trusted tenant must lazily create the config row")
 	assert.Equal(t, tenant+"/", app.KeyPrefix)
 	assert.Equal(t, tenant, models.TenantKeyOf(app.TenantKey))
-	assert.NotEmpty(t, app.AppSecret, "minted secret satisfies the not-null column")
 }
 
 // TestConfirmUpload_TrustedFlowWritesTenantKey drives the full trusted flow:
@@ -90,7 +88,6 @@ func TestConfirmUpload_TrustedFlowWritesTenantKey(t *testing.T) {
 	file, err := dal.GetFileByID(context.Background(), db, confirmed.GetFileId())
 	require.NoError(t, err)
 	assert.Equal(t, tenant, models.TenantKeyOf(file.TenantKey), "confirmed file carries the tenant")
-	assert.Equal(t, tenant, file.AppKey)
 
 	obj, err := dal.GetObjectByID(context.Background(), db, file.ObjectID)
 	require.NoError(t, err)
@@ -114,7 +111,6 @@ func TestGenerateUploadURL_TrustedKeepsStoredPrefix(t *testing.T) {
 
 	var sess models.StorageUploadSession
 	require.NoError(t, db.Where("owner_id = ?", 402).First(&sess).Error)
-	assert.Equal(t, TestTenantKey, sess.AppKey)
 	assert.Equal(t, "uploads/", sess.KeyPrefix)
 	assert.Equal(t, TestTenantKey, models.TenantKeyOf(sess.TenantKey))
 }
@@ -160,7 +156,6 @@ func TestGenerateUploadURL_TrustedAuthoritativeOverSmuggledLegacyCreds(t *testin
 
 	var sess models.StorageUploadSession
 	require.NoError(t, db.Where("owner_id = ?", 403).First(&sess).Error)
-	assert.Equal(t, tenant, sess.AppKey)
 	assert.Equal(t, tenant+"/", sess.KeyPrefix)
 
 	var apps []models.StorageApp

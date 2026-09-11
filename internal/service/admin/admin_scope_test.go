@@ -70,7 +70,7 @@ func seedScopedApps(t *testing.T, s *Service) {
 		{"beta-app", "beta/", scopeBeta},
 	} {
 		app := &models.StorageApp{
-			ID: int64(9000 + i), AppKey: tc.appKey, AppSecret: "s", Name: tc.appKey,
+			ID: int64(9000 + i), AppKey: tc.appKey, Name: tc.appKey,
 			KeyPrefix: tc.prefix, TenantKey: models.TenantKeyPtr(tc.tenant),
 		}
 		require.NoError(t, dal.CreateApp(ctx, s.db, app))
@@ -138,8 +138,10 @@ func TestAdminScope_AppPlatformBranch(t *testing.T) {
 	all, err := svc.AdminListTenantConfigs(platformCtx(), nil)
 	require.NoError(t, err)
 	assert.Len(t, all.GetConfigs(), 3)
+	// cross-view reaches any row — the retired rotation answers the
+	// retirement error (the row resolved; scope passed)
 	_, err = svc.AdminRotateTenantConfigSecret(platformCtx(), &storagev1.AdminRotateTenantConfigSecretRequest{TenantKey: scopeBeta})
-	require.NoError(t, err)
+	require.ErrorIs(t, err, xcodes.ErrSecretRetired.New())
 }
 
 // TestAdminScope_PlatformOnlySurfaces: the dimension-less Admin* surfaces

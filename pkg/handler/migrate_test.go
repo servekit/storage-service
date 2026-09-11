@@ -47,7 +47,7 @@ func TestMigrate_TablePrefixAware(t *testing.T) {
 	// creates the prefixed tables itself.
 	require.NoError(t, Migrate(db), "migrate must converge a prefixed database")
 	require.NoError(t, db.Exec(fmt.Sprintf(
-		`INSERT INTO %s (id, app_key, app_secret, name, key_prefix, created_at, updated_at) VALUES (1, 'legacyapp', 's', 'legacy', 'legacy/', now(), now())`,
+		`INSERT INTO %s (id, app_key, name, key_prefix, created_at, updated_at) VALUES (1, 'legacyapp', 'legacy', 'legacy/', now(), now())`,
 		tableName(db, "storage_apps"))).Error)
 	require.NoError(t, db.Exec(fmt.Sprintf(
 		`UPDATE %s SET tenant_key = NULL`, tableName(db, "storage_apps"))).Error)
@@ -71,20 +71,26 @@ func TestMigrate_Phase3TenantKeyBackfill(t *testing.T) {
 
 	seedCtx := context.Background()
 	require.NoError(t, db.WithContext(seedCtx).Create(&models.StorageApp{
-		ID: 1, AppKey: "testkit", AppSecret: "s", Name: "testkit", KeyPrefix: "testkit/",
+		ID: 1, AppKey: "testkit", Name: "testkit", KeyPrefix: "testkit/",
+	}).Error)
+	// Re-add the legacy pointer the ④ step dropped (pre-③ simulation): rows
+	// carrying it must backfill through the app mapping.
+	require.NoError(t, db.Exec(`ALTER TABLE storage_files ADD COLUMN IF NOT EXISTS app_key varchar(64) NOT NULL DEFAULT ''`).Error)
+	require.NoError(t, db.Exec(`ALTER TABLE storage_upload_sessions ADD COLUMN IF NOT EXISTS app_key varchar(64) NOT NULL DEFAULT ''`).Error)
+	require.NoError(t, db.WithContext(seedCtx).Create(&models.StorageFile{
+		ID: 11, OwnerType: 1, OwnerID: 1, ObjectID: 1, Filename: "mapped.bin",
 	}).Error)
 	require.NoError(t, db.WithContext(seedCtx).Create(&models.StorageFile{
-		ID: 11, OwnerType: 1, OwnerID: 1, ObjectID: 1, AppKey: "testkit", Filename: "mapped.bin",
+		ID: 12, OwnerType: 1, OwnerID: 2, ObjectID: 1, Filename: "pre-app.bin",
 	}).Error)
-	require.NoError(t, db.WithContext(seedCtx).Create(&models.StorageFile{
-		ID: 12, OwnerType: 1, OwnerID: 2, ObjectID: 1, AppKey: "", Filename: "pre-app.bin",
-	}).Error)
+	require.NoError(t, db.Exec(`UPDATE storage_files SET app_key = 'testkit' WHERE id = 11`).Error)
 	require.NoError(t, db.WithContext(seedCtx).Create(&models.StorageUploadSession{
 		ID: 21, OwnerType: 1, OwnerID: 1, Bucket: "uploads", ObjectKey: "testkit/x",
-		AppKey: "testkit", KeyPrefix: "testkit/", MD5: "m", Size: 1,
+		KeyPrefix: "testkit/", MD5: "m", Size: 1,
 		ContentType: "text/plain", Filename: "s.bin", Vendor: 1,
 		Status: 0, ExpiresAt: time.Now().Add(time.Hour),
 	}).Error)
+	require.NoError(t, db.Exec(`UPDATE storage_upload_sessions SET app_key = 'testkit' WHERE id = 21`).Error)
 
 	require.NoError(t, Migrate(db), "backfill run must succeed")
 
@@ -115,10 +121,15 @@ func TestMigrate_Phase3ReconcileAborts(t *testing.T) {
 
 	require.NoError(t, db.WithContext(context.Background()).Create(&models.StorageUploadSession{
 		ID: 31, OwnerType: 1, OwnerID: 1, Bucket: "uploads", ObjectKey: "ghost/x",
-		AppKey: "ghost-app", KeyPrefix: "ghost/", MD5: "m", Size: 1,
+		KeyPrefix: "ghost/", MD5: "m", Size: 1,
 		ContentType: "text/plain", Filename: "g.bin", Vendor: 1,
 		Status: 0, ExpiresAt: time.Now().Add(time.Hour),
 	}).Error)
+	// Re-add the legacy pointer (pre-③ simulation) and dangle the session
+	// off a hard-deleted app's key.
+	require.NoError(t, db.Exec(`ALTER TABLE storage_files ADD COLUMN IF NOT EXISTS app_key varchar(64) NOT NULL DEFAULT ''`).Error)
+	require.NoError(t, db.Exec(`ALTER TABLE storage_upload_sessions ADD COLUMN IF NOT EXISTS app_key varchar(64) NOT NULL DEFAULT ''`).Error)
+	require.NoError(t, db.Exec(`UPDATE storage_upload_sessions SET app_key = 'ghost-app' WHERE id = 31`).Error)
 
 	err := Migrate(db)
 	require.Error(t, err)

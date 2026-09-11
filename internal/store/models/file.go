@@ -15,12 +15,9 @@ type StorageFile struct {
 	OwnerType int32 `gorm:"column:owner_type;type:smallint;not null;default:1;index:idx_files_owner" json:"owner_type"`
 	OwnerID   int64 `gorm:"column:owner_id;not null;index:idx_files_owner" json:"owner_id"`
 	ObjectID  int64 `gorm:"column:object_id;not null;index:idx_files_object_id" json:"object_id"`
-	// AppKey is the calling app that created the file (audit/stat dimension).
-	// Retained through the phase ③ window (④ drops it); new writes populate
-	// TenantKey below.
-	AppKey string `gorm:"column:app_key;type:varchar(64);not null;default:''" json:"app_key"`
 	// TenantKey is the tenant the creating app mapped to (phase ③ write-path
-	// switch). NULL on pre-③ rows until the migration backfill heals them.
+	// switch; the legacy app_key column was dropped with the ④ window
+	// close). NULL on pre-③ rows until the migration backfill heals them.
 	TenantKey   *string `gorm:"column:tenant_key;type:varchar(16)" json:"tenant_key,omitempty"`
 	Filename    string  `gorm:"column:filename;type:varchar(256);not null" json:"filename"`
 	FilePath    string  `gorm:"column:file_path;type:varchar(512)" json:"file_path,omitempty"`

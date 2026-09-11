@@ -47,6 +47,9 @@ func Migrate(db *gorm.DB) error {
 	if err := postMigrateTenantKey(db); err != nil {
 		return fmt.Errorf("post-migrate tenant_key: %w", err)
 	}
+	if err := postMigrateDropLegacy(db); err != nil {
+		return fmt.Errorf("post-migrate legacy drops: %w", err)
+	}
 	return nil
 }
 
@@ -75,20 +78,28 @@ func postMigrateTenantKey(db *gorm.DB) error {
 
 	// Backfill (idempotent: NULL rows only). apps map to their app_key
 	// literal (the ③ window mapping); files/sessions map through their
-	// stored app_key.
+	// stored app_key. The pointer-driven backfills can only run while the
+	// legacy app_key column still exists (④ drops it after its own converge
+	// check; fresh post-④ databases never carry it — nothing to backfill).
 	if err := db.Exec(fmt.Sprintf(
 		`UPDATE %s SET tenant_key = app_key WHERE tenant_key IS NULL`, apps)).Error; err != nil {
 		return fmt.Errorf("backfill storage_apps: %w", err)
 	}
-	if err := db.Exec(fmt.Sprintf(`UPDATE %s f SET tenant_key = a.tenant_key
-		FROM %s a
-		WHERE f.app_key = a.app_key AND f.app_key <> '' AND f.tenant_key IS NULL`, files, apps)).Error; err != nil {
-		return fmt.Errorf("backfill storage_files: %w", err)
+	hasAppKey, err := columnExists(db, files, "app_key")
+	if err != nil {
+		return err
 	}
-	if err := db.Exec(fmt.Sprintf(`UPDATE %s s SET tenant_key = a.tenant_key
-		FROM %s a
-		WHERE s.app_key = a.app_key AND s.app_key <> '' AND s.tenant_key IS NULL`, sessions, apps)).Error; err != nil {
-		return fmt.Errorf("backfill storage_upload_sessions: %w", err)
+	if hasAppKey {
+		if err := db.Exec(fmt.Sprintf(`UPDATE %s f SET tenant_key = a.tenant_key
+			FROM %s a
+			WHERE f.app_key = a.app_key AND f.app_key <> '' AND f.tenant_key IS NULL`, files, apps)).Error; err != nil {
+			return fmt.Errorf("backfill storage_files: %w", err)
+		}
+		if err := db.Exec(fmt.Sprintf(`UPDATE %s s SET tenant_key = a.tenant_key
+			FROM %s a
+			WHERE s.app_key = a.app_key AND s.app_key <> '' AND s.tenant_key IS NULL`, sessions, apps)).Error; err != nil {
+			return fmt.Errorf("backfill storage_upload_sessions: %w", err)
+		}
 	}
 
 	// Reconcile: every row that can carry a tenant_key does. Empty-app_key
@@ -99,16 +110,75 @@ func postMigrateTenantKey(db *gorm.DB) error {
 		fmt.Sprintf(`SELECT count(*), count(tenant_key) FROM %s`, apps)); err != nil {
 		return err
 	}
-	if err := reconcileTenantKey(db, "storage_files",
-		fmt.Sprintf(`SELECT count(*) FILTER (WHERE app_key <> ''), count(tenant_key) FILTER (WHERE app_key <> '') FROM %s`, files)); err != nil {
-		return err
-	}
-	if err := reconcileTenantKey(db, "storage_upload_sessions",
-		fmt.Sprintf(`SELECT count(*) FILTER (WHERE app_key <> ''), count(tenant_key) FILTER (WHERE app_key <> '') FROM %s`, sessions)); err != nil {
-		return err
+	if hasAppKey {
+		if err := reconcileTenantKey(db, "storage_files",
+			fmt.Sprintf(`SELECT count(*) FILTER (WHERE app_key <> ''), count(tenant_key) FILTER (WHERE app_key <> '') FROM %s`, files)); err != nil {
+			return err
+		}
+		if err := reconcileTenantKey(db, "storage_upload_sessions",
+			fmt.Sprintf(`SELECT count(*) FILTER (WHERE app_key <> ''), count(tenant_key) FILTER (WHERE app_key <> '') FROM %s`, sessions)); err != nil {
+			return err
+		}
 	}
 
 	slog.Info("migrate: phase3 tenant_key post-migration complete")
+	return nil
+}
+
+// columnExists reports whether the physical table carries the column.
+func columnExists(db *gorm.DB, table, column string) (bool, error) {
+	var exists bool
+	if err := db.Raw(
+		`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = ?)`,
+		table, column,
+	).Scan(&exists).Error; err != nil {
+		return false, fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+	return exists, nil
+}
+
+// postMigrateDropLegacy closes the ④ window on the data side
+// (deploy/phase4-drop-legacy.sql performs the identical procedure by hand):
+// after the ③ tenant_key re-keying converged, drop the redundant app_key
+// audit columns on files/sessions (tenant_key carries the attribution) and
+// the retired storage_apps.app_secret credential column. Guarded on the
+// files' tenant attribution: rows whose app_key was non-empty must have a
+// tenant_key before the pointer goes. DROP … IF EXISTS keeps it idempotent
+// on fresh databases (testcontainers never carry the columns).
+func postMigrateDropLegacy(db *gorm.DB) error {
+	//nolint:staticcheck // gorm.DB.Dialector is an interface field, not embedding
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	files := tableName(db, "storage_files")
+	sessions := tableName(db, "storage_upload_sessions")
+	apps := tableName(db, "storage_apps")
+
+	if hasAppKey, err := columnExists(db, files, "app_key"); err != nil {
+		return err
+	} else if hasAppKey {
+		var total, filled int64
+		for _, table := range []string{files, sessions} {
+			if err := db.Raw(fmt.Sprintf(
+				`SELECT count(*) FILTER (WHERE app_key <> ''), count(tenant_key) FILTER (WHERE app_key <> '') FROM %s`, table,
+			)).Row().Scan(&total, &filled); err != nil {
+				return fmt.Errorf("reconcile app_key→tenant_key on %s: %w", table, err)
+			}
+			if filled != total {
+				return fmt.Errorf("refusing to drop app_key on %s: %d of %d attributable rows carry tenant_key", table, filled, total)
+			}
+		}
+		if err := db.Exec(fmt.Sprintf(`ALTER TABLE %s DROP COLUMN IF EXISTS app_key`, files)).Error; err != nil {
+			return fmt.Errorf("drop storage_files.app_key: %w", err)
+		}
+		if err := db.Exec(fmt.Sprintf(`ALTER TABLE %s DROP COLUMN IF EXISTS app_key`, sessions)).Error; err != nil {
+			return fmt.Errorf("drop storage_upload_sessions.app_key: %w", err)
+		}
+	}
+	if err := db.Exec(fmt.Sprintf(`ALTER TABLE %s DROP COLUMN IF EXISTS app_secret`, apps)).Error; err != nil {
+		return fmt.Errorf("drop storage_apps.app_secret: %w", err)
+	}
+	slog.Info("migrate: phase4 legacy-column drops complete")
 	return nil
 }
 
