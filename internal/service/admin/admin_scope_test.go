@@ -119,9 +119,6 @@ func TestAdminScope_AppPlatformBranch(t *testing.T) {
 	_, err = svc.AdminUpdateTenantConfig(ctx, &storagev1.AdminUpdateTenantConfigRequest{TenantKey: scopeBeta})
 	require.ErrorIs(t, err, xcodes.ErrAppNotFound.New())
 
-	_, err = svc.AdminRotateTenantConfigSecret(ctx, &storagev1.AdminRotateTenantConfigSecretRequest{TenantKey: scopeBeta})
-	require.ErrorIs(t, err, xcodes.ErrAppNotFound.New())
-
 	_, err = svc.AdminDeleteTenantConfig(ctx, &storagev1.AdminDeleteTenantConfigRequest{TenantKey: scopeBeta})
 	require.ErrorIs(t, err, xcodes.ErrAppNotFound.New())
 
@@ -138,10 +135,6 @@ func TestAdminScope_AppPlatformBranch(t *testing.T) {
 	all, err := svc.AdminListTenantConfigs(platformCtx(), nil)
 	require.NoError(t, err)
 	assert.Len(t, all.GetConfigs(), 3)
-	// cross-view reaches any row — the retired rotation answers the
-	// retirement error (the row resolved; scope passed)
-	_, err = svc.AdminRotateTenantConfigSecret(platformCtx(), &storagev1.AdminRotateTenantConfigSecretRequest{TenantKey: scopeBeta})
-	require.ErrorIs(t, err, xcodes.ErrSecretRetired.New())
 }
 
 // TestAdminScope_PlatformOnlySurfaces: the dimension-less Admin* surfaces

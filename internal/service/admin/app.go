@@ -144,19 +144,6 @@ func (s *Service) AdminUpdateTenantConfig(ctx context.Context, req *storagev1.Ad
 	return &storagev1.AdminUpdateTenantConfigResponse{Config: appToProto(app)}, nil
 }
 
-// AdminRotateTenantConfigSecret is retired: the app_secret column was
-// dropped when the ④ window closed (spec §9.1.3) — config rows carry no
-// credential to rotate. Ownership-checked against the caller's scope before
-// refusing, so a foreign row still answers not-found.
-func (s *Service) AdminRotateTenantConfigSecret(ctx context.Context, req *storagev1.AdminRotateTenantConfigSecretRequest) (*storagev1.AdminRotateTenantConfigSecretResponse, error) {
-	app, err := s.configForTenantScoped(ctx, req.GetTenantKey())
-	if err != nil {
-		return nil, err
-	}
-	_ = app
-	return nil, xcodes.ErrSecretRetired.New("app_secret was retired with the ④ window close; the data plane authenticates via the trusted x-tenant-key")
-}
-
 // AdminListTenantConfigs lists the live config rows in the caller's scope:
 // for an injected key only the tenant's row; the cross-view the whole
 // registry (one row per tenant, low cardinality, no paging).

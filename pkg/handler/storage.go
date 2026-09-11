@@ -225,11 +225,6 @@ func (h *Handler) AdminUpdateTenantConfig(ctx context.Context, req *storagev1.Ad
 	return h.svc.AdminUpdateTenantConfig(ctx, req)
 }
 
-// AdminRotateTenantConfigSecret mints a new secret (shown once).
-func (h *Handler) AdminRotateTenantConfigSecret(ctx context.Context, req *storagev1.AdminRotateTenantConfigSecretRequest) (*storagev1.AdminRotateTenantConfigSecretResponse, error) {
-	return h.svc.AdminRotateTenantConfigSecret(ctx, req)
-}
-
 // AdminListTenantConfigs lists the config rows in scope.
 func (h *Handler) AdminListTenantConfigs(ctx context.Context, req *storagev1.AdminListTenantConfigsRequest) (*storagev1.AdminListTenantConfigsResponse, error) {
 	return h.svc.AdminListTenantConfigs(ctx, req)

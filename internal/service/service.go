@@ -445,11 +445,6 @@ func (s *StorageService) AdminUpdateTenantConfig(ctx context.Context, req *stora
 	return s.admin.AdminUpdateTenantConfig(ctx, req)
 }
 
-// AdminRotateTenantConfigSecret delegates to the admin subpackage.
-func (s *StorageService) AdminRotateTenantConfigSecret(ctx context.Context, req *storagev1.AdminRotateTenantConfigSecretRequest) (*storagev1.AdminRotateTenantConfigSecretResponse, error) {
-	return s.admin.AdminRotateTenantConfigSecret(ctx, req)
-}
-
 // AdminListTenantConfigs delegates to the admin subpackage.
 func (s *StorageService) AdminListTenantConfigs(ctx context.Context, req *storagev1.AdminListTenantConfigsRequest) (*storagev1.AdminListTenantConfigsResponse, error) {
 	return s.admin.AdminListTenantConfigs(ctx, req)
