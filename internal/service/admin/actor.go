@@ -17,8 +17,14 @@
 //     AdminListTenantConfigs / AdminDeleteTenantConfig) carries the phase ③
 //     tenant mapping and is tenant-scopable exactly like the
 //     message/telemetry config surfaces;
-//   - every other Admin* RPC (files, quotas, stats, providers, buckets,
-//     settings, owner lifecycle, audit) has NO tenant dimension — those are
+//   - the FILE surfaces (AdminListFiles / AdminGetFile / AdminDeleteFile)
+//     are tenant-scopable too (phase ④ Q11): every file row belongs to
+//     exactly one tenant via tenant_key — there is NO shared/platform-pool
+//     layer here. A scoped caller sees their own rows only; a pre-③ row the
+//     backfill could not attribute (tenant_key NULL) belongs to no tenant
+//     and stays cross-view only;
+//   - every other Admin* RPC (quotas, stats, providers, buckets, settings,
+//     owner lifecycle, audit) has NO tenant dimension — those are
 //     cross-tenant platform surfaces and admit only the PLATFORM cross-view
 //     (requirePlatformScope), matching the console's canPlatform routes.
 //
@@ -112,4 +118,28 @@ func clampTenantKey(scope, requested, appKey string) string {
 		return appKey
 	}
 	return scope
+}
+
+// fileTenantKey resolves the tenant a file row belongs to. Unlike app rows
+// there is NO fallback literal: the tenant_key column is the whole mapping,
+// and a NULL row (pre-③ history the ③ T6 backfill could not attribute)
+// resolves to "" — the unattributed state.
+func fileTenantKey(f *models.StorageFile) string {
+	return models.TenantKeyOf(f.TenantKey)
+}
+
+// authorizeFileTenant is the per-file rule after the row load (the file
+// twin of authorizeAppTenant): the cross-view touches everything; a scoped
+// caller only rows of their own tenant. An unattributed row belongs to no
+// tenant, so it is cross-view only. Foreign and unattributed alike answer
+// the caller-supplied not-found error — file existence never leaks
+// (anti-enumeration).
+func authorizeFileTenant(scope string, f *models.StorageFile, notFound error) error {
+	if scope == "" {
+		return nil
+	}
+	if fileTenantKey(f) == scope {
+		return nil
+	}
+	return notFound
 }

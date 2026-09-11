@@ -24,6 +24,7 @@ import (
 	"github.com/servekit/go-common/tenantctx"
 	"github.com/servekit/storage-service/internal/provider/storage"
 	"github.com/servekit/storage-service/internal/service/audit"
+	"github.com/servekit/storage-service/internal/service/quota"
 	"github.com/servekit/storage-service/internal/store/dal"
 	"github.com/servekit/storage-service/internal/store/models"
 	"github.com/servekit/storage-service/pkg/xcodes"
@@ -58,7 +59,11 @@ func newScopeFixture(t *testing.T) *Service {
 	reg, err := storage.NewRegistry(nil)
 	require.NoError(t, err)
 	gid := &seqGID{}
-	return New(&Deps{DB: db, GID: gid, Registry: reg, Audit: audit.New(&audit.Deps{DB: db, GID: gid}).Recorder()})
+	rec := audit.New(&audit.Deps{DB: db, GID: gid}).Recorder()
+	return New(&Deps{
+		DB: db, GID: gid, Registry: reg, Audit: rec,
+		Quota: quota.New(&quota.Deps{DB: db, GID: gid, Audit: rec, DefaultQuotaBytes: 1 << 30}),
+	})
 }
 
 // seedScopedApps plants one app row per tenant.
@@ -138,23 +143,15 @@ func TestAdminScope_AppPlatformBranch(t *testing.T) {
 }
 
 // TestAdminScope_PlatformOnlySurfaces: the dimension-less Admin* surfaces
-// (owner/files/quota/stats/providers/buckets/settings) admit only the
-// PLATFORM cross-view — a tenant-scoped caller is refused even though the
-// console once showed these pages.
+// (owner/quota/stats/providers/buckets/settings) admit only the PLATFORM
+// cross-view — a tenant-scoped caller is refused. The FILE surfaces are the
+// exception: rows carry tenant_key, so they answer a scoped caller too (the
+// full matrix lives in admin_file_scope_test.go).
 func TestAdminScope_PlatformOnlySurfaces(t *testing.T) {
 	svc := newScopeFixture(t)
 	ctx := tenantCtx(scopeAlpha)
 
-	_, err := svc.AdminListFiles(ctx, &storagev1.AdminListFilesRequest{})
-	require.ErrorIs(t, err, xcodes.ErrForbidden.New())
-
-	_, err = svc.AdminGetFile(ctx, &storagev1.AdminGetFileRequest{FileId: 1})
-	require.ErrorIs(t, err, xcodes.ErrForbidden.New())
-
-	_, err = svc.AdminDeleteFile(ctx, &storagev1.AdminDeleteFileRequest{FileId: 1})
-	require.ErrorIs(t, err, xcodes.ErrForbidden.New())
-
-	_, err = svc.AdminGetQuota(ctx, &storagev1.AdminGetQuotaRequest{})
+	_, err := svc.AdminGetQuota(ctx, &storagev1.AdminGetQuotaRequest{})
 	require.ErrorIs(t, err, xcodes.ErrForbidden.New())
 
 	_, err = svc.AdminSetQuota(ctx, &storagev1.AdminSetQuotaRequest{})

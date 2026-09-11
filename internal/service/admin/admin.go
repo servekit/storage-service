@@ -281,12 +281,22 @@ func (s *Service) AdminGetStats(ctx context.Context, req *storagev1.AdminGetStat
 	return resp, nil
 }
 
-// AdminListFiles lists files across all owners (admin view) with filters:
-// owner, path prefix, extension, content-type prefix, vendor/bucket. Cursor
-// pagination via opaque page tokens.
+// AdminListFiles lists files (admin view) with filters: owner, path prefix,
+// extension, content-type prefix, vendor/bucket, tenant. Cursor pagination
+// via opaque page tokens.
+//
+// Phase ④ Q11 scope: a tenant-scoped caller lists their own tenant's files
+// only (the injected key overrides any tenant_key the body carried); the
+// PLATFORM cross-view keeps every row — unattributed pre-③ rows included —
+// and may narrow with the request's tenant_key filter.
 func (s *Service) AdminListFiles(ctx context.Context, req *storagev1.AdminListFilesRequest) (*storagev1.AdminListFilesResponse, error) {
-	if err := requirePlatformScope(ctx); err != nil {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
 		return nil, err
+	}
+	tenantFilter := req.GetTenantKey()
+	if scope != "" {
+		tenantFilter = scope
 	}
 
 	// The StorageObject no longer has a `provider` string column; it stores a
@@ -303,6 +313,7 @@ func (s *Service) AdminListFiles(ctx context.Context, req *storagev1.AdminListFi
 	filter := dal.AdminListFilesFilter{
 		OwnerType:         int32(req.GetOwnerType()),
 		OwnerID:           req.GetOwnerId(),
+		TenantKey:         tenantFilter,
 		PathPrefix:        req.GetPathPrefix(),
 		Extension:         req.GetExtension(),
 		ContentTypePrefix: req.GetContentTypePrefix(),
@@ -376,14 +387,22 @@ func (s *Service) AdminListFiles(ctx context.Context, req *storagev1.AdminListFi
 
 // AdminGetFile returns full metadata for a single file (admin view, includes
 // provider/bucket internals from the underlying storage object).
+//
+// Phase ④ Q11 scope: a tenant-scoped caller reaches only their own tenant's
+// files — a foreign OR unattributed (NULL tenant_key) row answers the same
+// ErrFileNotFound a missing id would (anti-enumeration).
 func (s *Service) AdminGetFile(ctx context.Context, req *storagev1.AdminGetFileRequest) (*storagev1.AdminFileInfo, error) {
-	if err := requirePlatformScope(ctx); err != nil {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
 		return nil, err
 	}
 
 	f, err := dal.GetFileByID(ctx, s.db, req.GetFileId())
 	if err != nil {
 		return nil, xcodes.ErrFileNotFound.Wrap(err)
+	}
+	if err := authorizeFileTenant(scope, f, xcodes.ErrFileNotFound.New()); err != nil {
+		return nil, err
 	}
 
 	obj, err := dal.GetObjectByID(ctx, s.db, f.ObjectID)
@@ -397,14 +416,22 @@ func (s *Service) AdminGetFile(ctx context.Context, req *storagev1.AdminGetFileR
 // AdminDeleteFile hard-deletes a single file row, decrements the object's
 // refcount, and releases the consumed quota — all in one transaction. Admin
 // override that bypasses soft-delete. Records an audit event.
+//
+// Phase ④ Q11 scope: same per-row rule as AdminGetFile — a scoped caller
+// deletes only their own tenant's files; foreign and unattributed rows
+// answer ErrFileNotFound and survive untouched.
 func (s *Service) AdminDeleteFile(ctx context.Context, req *storagev1.AdminDeleteFileRequest) (*emptypb.Empty, error) {
-	if err := requirePlatformScope(ctx); err != nil {
+	scope, err := scopeFromCtx(ctx)
+	if err != nil {
 		return nil, err
 	}
 
 	f, err := dal.GetFileByID(ctx, s.db, req.GetFileId())
 	if err != nil {
 		return nil, xcodes.ErrFileNotFound.Wrap(err)
+	}
+	if err := authorizeFileTenant(scope, f, xcodes.ErrFileNotFound.New()); err != nil {
+		return nil, err
 	}
 
 	obj, err := dal.GetObjectByID(ctx, s.db, f.ObjectID)
@@ -526,6 +553,7 @@ func buildAdminFileInfo(file *models.StorageFile, obj *models.StorageObject) *st
 		Provider:    conv.VendorToName(obj.Vendor),
 		Bucket:      obj.Bucket,
 		ObjectKey:   obj.ObjectKey,
+		TenantKey:   models.TenantKeyOf(file.TenantKey),
 		CreatedAt:   file.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   file.UpdatedAt.Format(time.RFC3339),
 	}

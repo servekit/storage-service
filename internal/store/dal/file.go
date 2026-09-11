@@ -52,9 +52,15 @@ type ListFilesPagedFilter struct {
 // AdminListFilesFilter defines filtering and pagination options for admin file listing.
 // All filter fields are optional — zero values mean "no filter".
 // Cursor semantics match ListFilesFilter.
+//
+// TenantKey is the phase ④ Q11 scoping filter: set → WHERE tenant_key = ?,
+// empty → every row including the unattributed (NULL) ones. The service
+// layer decides who may set it (the cross-view's request filter is honored;
+// a scoped caller's value is overridden by the injection).
 type AdminListFilesFilter struct {
 	OwnerType         int32
 	OwnerID           int64
+	TenantKey         string
 	PathPrefix        string
 	Extension         string
 	ContentTypePrefix string
@@ -230,6 +236,11 @@ func ListAllFiles(ctx context.Context, tx *gorm.DB, filter AdminListFilesFilter,
 	}
 	if filter.OwnerID > 0 {
 		q = q.Where(generated.StorageFile.OwnerID.Eq(filter.OwnerID))
+	}
+	if filter.TenantKey != "" {
+		// Scoped listing: the unattributed (NULL) rows belong to no tenant
+		// and stay cross-view only — the equality excludes them by design.
+		q = q.Where(generated.StorageFile.TenantKey.Eq(filter.TenantKey))
 	}
 	if filter.PathPrefix != "" {
 		q = q.Where(generated.StorageFile.FilePath.Like(filter.PathPrefix + "%"))
